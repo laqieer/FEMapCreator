@@ -8,6 +8,8 @@
 # .NET build outputs
 [Bb]in/
 [Oo]bj/
+TestResults/
+*.trx
 
 # Operating system metadata
 .DS_Store

@@ -1,9 +1,8 @@
 ﻿using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Security.Permissions;
+using System.Runtime.Versioning;
 
-[assembly: Extension]
+[assembly: SupportedOSPlatform("windows")]
 [assembly: AssemblyFileVersion("1.0.3.0")]
 [assembly: AssemblyTitle("FE Map Creator")]
 [assembly: AssemblyDescription("")]
@@ -15,4 +14,3 @@ using System.Security.Permissions;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCopyright("Copyright © bwdyeti.com 2014")]
 [assembly: AssemblyVersion("1.0.3.0")]
-[assembly: SecurityPermission(SecurityAction.RequestMinimum, SkipVerification = true)]

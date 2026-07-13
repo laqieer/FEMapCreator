@@ -4,6 +4,7 @@
 // MVID: 892ADB68-6185-447F-AABB-429C2C7B2C22
 // Assembly location: C:\FEMapCreator\FE_Map_Creator.exe
 
+using MapGenDictionaryExtension;
 using System;
 using System.Collections.Generic;
 using System.IO;

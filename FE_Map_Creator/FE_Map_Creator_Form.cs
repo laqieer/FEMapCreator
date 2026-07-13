@@ -185,15 +185,11 @@ public class FE_Map_Creator_Form : Form
     this.MapPicture.Paint += new PaintEventHandler(this.MapPicture_Paint);
     this.MapPicture.MouseLeave += new EventHandler(this.MapPicture_MouseLeave);
     this.load_tilesets();
-    string directoryName = Path.GetDirectoryName(Application.ExecutablePath);
+    string directoryName = App_Paths.Base_Directory;
     this.Map_Directory = directoryName;
-    if (Directory.Exists(directoryName + "\\Tilesets"))
-      directoryName += "\\Tilesets";
+    if (Directory.Exists(App_Paths.Tilesets_Directory))
+      directoryName = App_Paths.Tilesets_Directory;
     this.Tileset_Directory = directoryName;
-    if (0 > 0)
-    {
-      int num = 0 + 1;
-    }
     this.Tileset_Palette = new Tileset_Palette_Form();
     this.Tileset_Palette.FormClosing += new FormClosingEventHandler(this.Tileset_Palette_FormClosing);
     this.Tileset_Palette.Tile_Selected += new EventHandler(this.Tileset_Palette_Tile_Selected);
@@ -246,10 +242,10 @@ public class FE_Map_Creator_Form : Form
 
   protected void load_tilesets()
   {
-    string str1 = Path.Combine(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location), "Tileset_Data.xml");
+    string str1 = App_Paths.Tileset_Data_File;
     if (File.Exists(str1))
       this.Tileset_Data = this.read_tileset_xml(str1);
-    string str2 = Path.Combine(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location), "Terrain_Data.xml");
+    string str2 = App_Paths.Terrain_Data_File;
     if (!File.Exists(str2))
       return;
     this.Terrain_Data = this.read_terrain_xml(str2);
@@ -292,7 +288,7 @@ public class FE_Map_Creator_Form : Form
       }
       return dictionary;
     }
-    catch (Exception ex)
+    catch (Exception)
     {
     }
     return (Dictionary<int, Data_Tileset>) null;
@@ -339,7 +335,7 @@ public class FE_Map_Creator_Form : Form
       }
       return dictionary;
     }
-    catch (Exception ex)
+    catch (Exception)
     {
     }
     return (Dictionary<int, Data_Terrain>) null;
@@ -347,15 +343,14 @@ public class FE_Map_Creator_Form : Form
 
   protected void save_tilesets()
   {
-    this.save_tilesets(Path.Combine("Tileset Generation Data", $"{Path.GetFileNameWithoutExtension(this.Tileset_Filename)}.dat"));
+    this.save_tilesets(App_Paths.tileset_generation_file(this.Tileset_Filename));
   }
 
   protected void save_tilesets(string filename)
   {
     if (this.Tileset_Generator_Data == null)
       return;
-    if (!Directory.Exists("Tileset Generation Data"))
-      Directory.CreateDirectory("Tileset Generation Data");
+    Directory.CreateDirectory(Path.GetDirectoryName(filename));
     using (FileStream output = new FileStream(filename, FileMode.Create))
     {
       using (BinaryWriter writer = new BinaryWriter((Stream) output))
@@ -482,7 +477,7 @@ public class FE_Map_Creator_Form : Form
         }
         return numArray;
       }
-      catch (FormatException ex)
+      catch (FormatException)
       {
         int num = (int) MessageBox.Show("Map failed to load", "Invalid map", MessageBoxButtons.OK, MessageBoxIcon.Hand);
       }
@@ -509,7 +504,7 @@ public class FE_Map_Creator_Form : Form
           this.Text = $"Map Editor - {Path.GetFileNameWithoutExtension(filename)}";
           return numArray;
         }
-        catch (FormatException ex)
+        catch (FormatException)
         {
           int num = (int) MessageBox.Show("Map failed to load", "Invalid map", MessageBoxButtons.OK, MessageBoxIcon.Hand);
         }
@@ -552,7 +547,7 @@ public class FE_Map_Creator_Form : Form
       }
       return numArrayList;
     }
-    catch (IndexOutOfRangeException ex)
+    catch (IndexOutOfRangeException)
     {
       int num = (int) MessageBox.Show("Tmx file failed to load", "Error loading file", MessageBoxButtons.OK, MessageBoxIcon.Hand);
     }
@@ -606,9 +601,10 @@ public class FE_Map_Creator_Form : Form
     try
     {
       using (new Bitmap(this.LoadTilesetDialog.FileName))
-        ;
+      {
+      }
     }
-    catch (ArgumentException ex)
+    catch (ArgumentException)
     {
       int num = (int) MessageBox.Show("Not an image file", "Invalid image", MessageBoxButtons.OK, MessageBoxIcon.Hand);
       return false;
@@ -705,7 +701,7 @@ public class FE_Map_Creator_Form : Form
     }
     this.Tileset_Image = new Bitmap(this.Tileset_Filename);
     this.Tileset_Generator_Data = (Tileset_Generation_Data) null;
-    string path = Path.Combine("Tileset Generation Data", $"{Path.GetFileNameWithoutExtension(this.Tileset_Filename)}.dat");
+    string path = App_Paths.tileset_generation_file(this.Tileset_Filename);
     if (File.Exists(path))
     {
       using (FileStream input = new FileStream(path, FileMode.Open))
@@ -851,10 +847,6 @@ public class FE_Map_Creator_Form : Form
       {
         int num2 = (int) index1 % num1;
         int num3 = (int) index1 / num1;
-        if ((int) index1 % 50 == 0)
-        {
-          int num4 = 0 + 1;
-        }
         foreach (Tile_Directions dir in tileDirectionsSet)
         {
           if (!this.Tile_Matches.has_index(dir, (int) index1))

@@ -17,7 +17,6 @@ namespace FE_Map_Creator;
 
 public class Tileset_Palette_Form : Form
 {
-  private int Index;
   private int Tileset_Width;
   private int Tileset_Height;
   private bool Selecting_Tile;
@@ -29,7 +28,7 @@ public class Tileset_Palette_Form : Form
   private int[,] Selected_Tile_Brush;
   private bool Multiple_Edit_Disclaimer_Accepted;
   private Size Edit_Form_Size;
-  private IContainer components;
+  private IContainer components = new Container();
   private TableLayoutPanel TilesetPaletteTable;
   private PictureBox pictureBox1;
   private Panel TilesetPanel;
@@ -37,6 +36,7 @@ public class Tileset_Palette_Form : Form
   private FlowLayoutPanel flowLayoutPanel1;
   private CheckBox TerrainCheckBox;
 
+  [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
   public int index
   {
     set
@@ -52,6 +52,7 @@ public class Tileset_Palette_Form : Form
     }
   }
 
+  [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
   public int[,] indices
   {
     get

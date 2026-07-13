@@ -16,7 +16,7 @@ public class Mar_Import_Form : Form
 {
   protected bool updating;
   protected int Map_Size;
-  private IContainer components;
+  private IContainer components = new Container();
   private Button OkayButton;
   private NumericUpDown WidthSpinner;
   private NumericUpDown HeightSpinner;

@@ -14,9 +14,9 @@ namespace FE_Map_Creator;
 
 public class Map_Resize_Form : Form
 {
-  private int Width;
-  private int Height;
-  private IContainer components;
+  private int Map_Width;
+  private int Map_Height;
+  private IContainer components = new Container();
   private TableLayoutPanel ResizeTable;
   private FlowLayoutPanel DownResizeFlowPanel;
   private NumericUpDown DownResizeSpinner;
@@ -45,30 +45,30 @@ public class Map_Resize_Form : Form
   public Map_Resize_Form(int width, int height)
   {
     this.InitializeComponent();
-    this.Width = width;
-    this.Height = height;
-    this.WidthResizeLabel.Text = this.Width.ToString();
-    this.HeightResizeLabel.Text = this.Height.ToString();
+    this.Map_Width = width;
+    this.Map_Height = height;
+    this.WidthResizeLabel.Text = this.Map_Width.ToString();
+    this.HeightResizeLabel.Text = this.Map_Height.ToString();
   }
 
   private void UpResizeSpinner_ValueChanged(object sender, EventArgs e)
   {
-    this.HeightResizeLabel.Text = (this.UpResizeSpinner.Value + this.DownResizeSpinner.Value + (Decimal) this.Height).ToString();
+    this.HeightResizeLabel.Text = (this.UpResizeSpinner.Value + this.DownResizeSpinner.Value + (Decimal) this.Map_Height).ToString();
   }
 
   private void LeftResizeSpinner_ValueChanged(object sender, EventArgs e)
   {
-    this.WidthResizeLabel.Text = (this.LeftResizeSpinner.Value + this.RightResizeSpinner.Value + (Decimal) this.Width).ToString();
+    this.WidthResizeLabel.Text = (this.LeftResizeSpinner.Value + this.RightResizeSpinner.Value + (Decimal) this.Map_Width).ToString();
   }
 
   private void RightResizeSpinner_ValueChanged(object sender, EventArgs e)
   {
-    this.WidthResizeLabel.Text = (this.LeftResizeSpinner.Value + this.RightResizeSpinner.Value + (Decimal) this.Width).ToString();
+    this.WidthResizeLabel.Text = (this.LeftResizeSpinner.Value + this.RightResizeSpinner.Value + (Decimal) this.Map_Width).ToString();
   }
 
   private void DownResizeSpinner_ValueChanged(object sender, EventArgs e)
   {
-    this.HeightResizeLabel.Text = (this.UpResizeSpinner.Value + this.DownResizeSpinner.Value + (Decimal) this.Height).ToString();
+    this.HeightResizeLabel.Text = (this.UpResizeSpinner.Value + this.DownResizeSpinner.Value + (Decimal) this.Map_Height).ToString();
   }
 
   protected override void Dispose(bool disposing)

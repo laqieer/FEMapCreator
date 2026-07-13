@@ -23,13 +23,14 @@ public class Terrain_Palette_Form : Form
   protected int Terrain_Height;
   protected bool Selecting_Tile;
   protected Point Selected_Base_Tile;
-  private IContainer components;
+  private IContainer components = new Container();
   private TableLayoutPanel TilesetPaletteTable;
   private PictureBox pictureBox1;
   private Panel TilesetPanel;
   private FlowLayoutPanel flowLayoutPanel1;
   private Label label1;
 
+  [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
   public int active_terrain
   {
     get => this.Selected_Base_Tile.Y * this.Terrain_Width + this.Selected_Base_Tile.X;

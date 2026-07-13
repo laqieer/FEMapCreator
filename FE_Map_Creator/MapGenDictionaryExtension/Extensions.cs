@@ -13,6 +13,42 @@ namespace MapGenDictionaryExtension;
 
 public static class Extensions
 {
+  public static void write(this Dictionary<int, int> dictionary, BinaryWriter writer)
+  {
+    writer.Write(dictionary.Count);
+    foreach (KeyValuePair<int, int> keyValuePair in dictionary)
+    {
+      writer.Write(keyValuePair.Key);
+      writer.Write(keyValuePair.Value);
+    }
+  }
+
+  public static void read(this Dictionary<int, int> dictionary, BinaryReader reader)
+  {
+    dictionary.Clear();
+    int count = reader.ReadInt32();
+    for (int index = 0; index < count; ++index)
+      dictionary.Add(reader.ReadInt32(), reader.ReadInt32());
+  }
+
+  public static void write(this Dictionary<short, short> dictionary, BinaryWriter writer)
+  {
+    writer.Write(dictionary.Count);
+    foreach (KeyValuePair<short, short> keyValuePair in dictionary)
+    {
+      writer.Write(keyValuePair.Key);
+      writer.Write(keyValuePair.Value);
+    }
+  }
+
+  public static void read(this Dictionary<short, short> dictionary, BinaryReader reader)
+  {
+    dictionary.Clear();
+    int count = reader.ReadInt32();
+    for (int index = 0; index < count; ++index)
+      dictionary.Add(reader.ReadInt16(), reader.ReadInt16());
+  }
+
   public static void write(
     this Dictionary<int, Dictionary<int, int>> dictionary,
     BinaryWriter writer)

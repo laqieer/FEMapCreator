@@ -28,8 +28,9 @@ public class Tile_Edit_Form : Form
   private Tile_Data Data;
   private bool Updating;
   private Thread Tile_Update_Thread;
+  private CancellationTokenSource Tile_Update_Cancellation;
   private object thread_lock = new object();
-  private IContainer components;
+  private IContainer components = new Container();
   private TableLayoutPanel tableLayoutPanel1;
   private Panel TilesetPanel;
   private PictureBox pictureBox1;
@@ -113,7 +114,12 @@ public class Tile_Edit_Form : Form
     this.Identical_Tiles = identical_tiles;
     lock (this.thread_lock)
     {
-      this.Tile_Update_Thread = new Thread(new ThreadStart(this.update_displayed_tile));
+      this.Tile_Update_Cancellation = new CancellationTokenSource();
+      CancellationToken cancellationToken = this.Tile_Update_Cancellation.Token;
+      this.Tile_Update_Thread = new Thread((ThreadStart) (() => this.update_displayed_tile(cancellationToken)))
+      {
+        IsBackground = true
+      };
       this.Tile_Update_Thread.Start();
     }
     this.load_tileset(bmp);
@@ -138,13 +144,17 @@ public class Tile_Edit_Form : Form
     this.Size = new Size(Math.Min(width + 200 + (SystemInformation.FrameBorderSize.Width * 2 + SystemInformation.VerticalScrollBarWidth), Screen.GetBounds((Control) this).Width), this.Size.Height);
   }
 
-  private void update_displayed_tile()
+  private void update_displayed_tile(CancellationToken cancellationToken)
   {
-    while (true)
+    while (!cancellationToken.IsCancellationRequested)
     {
       while (this.Selecting_Tile)
-        Thread.Sleep(1000);
-      Thread.Sleep(500);
+      {
+        if (cancellationToken.WaitHandle.WaitOne(100))
+          return;
+      }
+      if (cancellationToken.WaitHandle.WaitOne(500))
+        return;
       lock (this.thread_lock)
       {
         if (!this.Selecting_Tile)
@@ -471,15 +481,19 @@ public class Tile_Edit_Form : Form
 
   private void Tile_Edit_Form_FormClosing(object sender, FormClosingEventArgs e)
   {
+    Thread tileUpdateThread;
+    CancellationTokenSource tileUpdateCancellation;
     lock (this.thread_lock)
     {
-      if (this.Tile_Update_Thread != null)
-      {
-        this.Tile_Update_Thread.Abort();
-        this.Tile_Update_Thread.Join(1000);
-        this.Tile_Update_Thread = (Thread) null;
-      }
+      tileUpdateThread = this.Tile_Update_Thread;
+      tileUpdateCancellation = this.Tile_Update_Cancellation;
+      this.Tile_Update_Thread = (Thread) null;
+      this.Tile_Update_Cancellation = (CancellationTokenSource) null;
     }
+    tileUpdateCancellation?.Cancel();
+    if (tileUpdateThread != null && tileUpdateThread.IsAlive)
+      tileUpdateThread.Join(1000);
+    tileUpdateCancellation?.Dispose();
     if (this.pictureBox1.Image == null)
       return;
     this.pictureBox1.Image.Dispose();

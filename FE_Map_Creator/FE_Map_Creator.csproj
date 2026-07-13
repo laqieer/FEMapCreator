@@ -1,85 +1,38 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <!--Project was exported from assembly: C:\FEMapCreator\FE_Map_Creator.exe-->
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{16AC605D-B82D-4ADE-A3A5-2413AC768DBD}</ProjectGuid>
     <OutputType>WinExe</OutputType>
-    <AssemblyName>FE_Map_Creator</AssemblyName>
-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
-    <TargetFrameworkProfile />
-    <ApplicationVersion>1.0.3.0</ApplicationVersion>
-    <FileAlignment>512</FileAlignment>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>FE_Map_Creator</RootNamespace>
+    <AssemblyName>FE_Map_Creator</AssemblyName>
+    <ApplicationVersion>1.0.3.0</ApplicationVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
+
   <ItemGroup>
-    <Reference Include="FEXNA_Library">
-      <HintPath>lib\FEXNA_Library.dll</HintPath>
-    </Reference>
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Xml.Linq" />
+    <ProjectReference Include="..\FEXNA_Library\FEXNA_Library.csproj" />
   </ItemGroup>
+
   <ItemGroup>
-    <Compile Include="System\Windows\Forms\Extensions.cs" />
-    <Compile Include="MapGenDictionaryExtension\Extensions.cs" />
-    <Compile Include="Additional_Math.cs" />
-    <Compile Include="Flood_Fill.cs" />
-    <Compile Include="Tileset_Generation_Data.cs" />
-    <Compile Include="NativeMethods.cs" />
-    <Compile Include="Modes.cs" />
-    <Compile Include="Tools.cs" />
-    <Compile Include="FE_Map_Creator_Form.cs" />
-    <Compile Include="Map_Resize_Form.cs" />
-    <Compile Include="Mar_Import_Form.cs" />
-    <Compile Include="Terrain_Color_Data.cs" />
-    <Compile Include="Terrain_Palette_Form.cs" />
-    <Compile Include="Tileset_Palette_Form.cs" />
-    <Compile Include="Map_Data.cs" />
-    <Compile Include="Program.cs" />
-    <Compile Include="Tile_Data.cs" />
-    <Compile Include="Tile_Edit_Form.cs" />
-    <Compile Include="Tile_Directions.cs" />
-    <Compile Include="Tile_Matching_Data.cs" />
-    <Compile Include="Properties\Resources.cs" />
-    <Compile Include="Properties\Settings.cs" />
-    <Compile Include="AssemblyInfo.cs" />
+    <EmbeddedResource Include="Icons\Brush.png">
+      <LogicalName>FE_Map_Creator.Icons.Brush.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Icons\Bucket.png">
+      <LogicalName>FE_Map_Creator.Icons.Bucket.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Icons\Rectangle.png">
+      <LogicalName>FE_Map_Creator.Icons.Rectangle.png</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
+
   <ItemGroup>
-    <EmbeddedResource Include="FE_Map_Creator_Form.resx" />
-    <EmbeddedResource Include="Icons\Brush.png" />
-    <EmbeddedResource Include="Icons\Bucket.png" />
-    <EmbeddedResource Include="Icons\Rectangle.png" />
-    <EmbeddedResource Include="Map_Resize_Form.resx" />
-    <EmbeddedResource Include="Mar_Import_Form.resx" />
-    <EmbeddedResource Include="Properties\Resources.resx" />
-    <EmbeddedResource Include="Terrain_Palette_Form.resx" />
-    <EmbeddedResource Include="Tile_Edit_Form.resx" />
-    <EmbeddedResource Include="Tileset_Palette_Form.resx" />
+    <Content Include="..\Terrain_Data.xml" Link="Terrain_Data.xml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Terrain_Images.png" Link="Terrain_Images.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Tileset_Data.xml" Link="Tileset_Data.xml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Tilesets\**\*" Link="Tilesets\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Tileset Generation Data\**\*" Link="Tileset Generation Data\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

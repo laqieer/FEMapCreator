@@ -318,8 +318,8 @@ internal class Terrain_Color_Data
     Terrain_Color_Data.Terrain_Graphic = (Bitmap) null;
     try
     {
-      if (File.Exists("Terrain_Images.png"))
-        Terrain_Color_Data.Terrain_Graphic = new Bitmap("Terrain_Images.png");
+      if (File.Exists(App_Paths.Terrain_Images_File))
+        Terrain_Color_Data.Terrain_Graphic = new Bitmap(App_Paths.Terrain_Images_File);
     }
     catch
     {

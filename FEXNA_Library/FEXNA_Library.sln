@@ -1,6 +1,8 @@
 
-Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FEXNA_Library", "FEXNA_Library.csproj", "{88988A3A-6094-4C41-9F52-BC20662C6D1F}"
 EndProject
 Global
