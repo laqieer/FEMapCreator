@@ -12,6 +12,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\FE_Map_Creator.Cli\FE_Map_Creator.Cli.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\FE_Map_Creator.Core\FE_Map_Creator.Core.csproj" />
     <ProjectReference Include="..\FE_Map_Creator\FE_Map_Creator.csproj" />
   </ItemGroup>
 

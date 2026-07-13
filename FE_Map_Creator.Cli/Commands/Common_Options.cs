@@ -1,0 +1,117 @@
+using System.CommandLine;
+
+#nullable disable
+namespace FE_Map_Creator.Cli.Commands;
+
+/// <summary>Factory helpers for options shared between the <c>generate</c> and <c>repair</c> commands.</summary>
+internal static class Common_Options
+{
+  internal static Option<string> tileset()
+  {
+    return new Option<string>("--tileset", "-t")
+    {
+      Description = "Tileset selector: exact bundled name, short identifier, or explicit override paths.",
+    };
+  }
+
+  internal static Option<string> assets_dir()
+  {
+    return new Option<string>("--assets-dir")
+    {
+      Description = "Root directory containing bundled Tilesets/, Tileset Generation Data/, and metadata XML. Defaults to the CLI install directory.",
+    };
+  }
+
+  internal static Option<string> tileset_image()
+  {
+    return new Option<string>("--tileset-image")
+    {
+      Description = "Explicit override path for the tileset PNG image.",
+    };
+  }
+
+  internal static Option<string> generation_data()
+  {
+    return new Option<string>("--generation-data")
+    {
+      Description = "Explicit override path for the tileset's binary generation-data (.dat) file.",
+    };
+  }
+
+  internal static Option<int> depth()
+  {
+    return new Option<int>("--depth")
+    {
+      Description = "Neighbor lookahead depth used by the generation algorithm. Must be 1 or 2.",
+      DefaultValueFactory = _ => 1,
+    };
+  }
+
+  internal static Option<int?> seed()
+  {
+    return new Option<int?>("--seed")
+    {
+      Description = "Random seed. When omitted, a seed is generated and reported so the run can be reproduced.",
+    };
+  }
+
+  internal static Option<bool> force()
+  {
+    return new Option<bool>("--force")
+    {
+      Description = "Overwrite an existing output file.",
+      DefaultValueFactory = _ => false,
+    };
+  }
+
+  internal static Option<bool> allow_incomplete()
+  {
+    return new Option<bool>("--allow-incomplete")
+    {
+      Description = "Exit successfully even if some cells could not be resolved.",
+      DefaultValueFactory = _ => false,
+    };
+  }
+
+  internal static Option<bool> require_complete()
+  {
+    return new Option<bool>("--require-complete")
+    {
+      Description = "Suppress writing the output if any cells remain unresolved.",
+      DefaultValueFactory = _ => false,
+    };
+  }
+
+  internal static Option<string> spec()
+  {
+    return new Option<string>("--spec")
+    {
+      Description = "Path to a versioned JSON job spec. Direct command options override values loaded from it.",
+    };
+  }
+
+  internal static Option<int?> width()
+  {
+    return new Option<int?>("--width")
+    {
+      Description = "Map width in tiles. Must be positive.",
+    };
+  }
+
+  internal static Option<int?> height()
+  {
+    return new Option<int?>("--height")
+    {
+      Description = "Map height in tiles. Must be positive.",
+    };
+  }
+
+  internal static Option<bool> fail_fast()
+  {
+    return new Option<bool>("--fail-fast")
+    {
+      Description = "Stop at the first failed or incomplete job instead of continuing and summarizing at the end.",
+      DefaultValueFactory = _ => false,
+    };
+  }
+}

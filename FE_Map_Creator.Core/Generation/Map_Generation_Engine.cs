@@ -1,0 +1,607 @@
+using FEXNA_Library;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+
+#nullable disable
+namespace FE_Map_Creator.Generation;
+
+/// <summary>
+/// Cross-platform map generation/repair core, faithfully extracted from
+/// FE_Map_Creator_Form's generate_map/repair_map and their private helpers so it can be
+/// shared by the WinForms GUI and other callers (CLI, tests) without any UI dependency.
+///
+/// Directions use the numeric-keypad convention used throughout the codebase:
+/// 2 = down, 4 = left, 6 = right, 8 = up; the opposite direction is 10 - dir.
+/// </summary>
+public sealed class Map_Generation_Engine
+{
+  // Coordinate offset to the already-drawn neighbor in the direction opposite `dir`,
+  // matching FE_Map_Creator_Form.REVERSE_DIRS (originally keyed with System.Drawing.Size).
+  private static readonly Dictionary<byte, Cell> Reverse_Dirs = new Dictionary<byte, Cell>()
+  {
+    { 2, new Cell(0, -1) },
+    { 4, new Cell(1, 0) },
+    { 6, new Cell(-1, 0) },
+    { 8, new Cell(0, 1) },
+  };
+
+  private readonly Tileset_Generation_Data _tileset_generation_data;
+  private readonly Data_Tileset _terrain_tileset;
+
+  public Map_Generation_Engine(Tileset_Generation_Data tileset_generation_data, Data_Tileset terrain_tileset = null)
+  {
+    this._tileset_generation_data = tileset_generation_data ?? throw new ArgumentNullException(nameof(tileset_generation_data));
+    this._terrain_tileset = terrain_tileset;
+  }
+
+  private Dictionary<int, Tile_Data> tileset_config_data => this._tileset_generation_data.generation_data;
+
+  /// <summary>
+  /// Fills every open cell reachable from the current drawn/locked frontier, seeding a
+  /// random valid tile to start (or restart, for any remaining disconnected unlocked
+  /// region) whenever the frontier runs dry, until every fillable cell is drawn or no
+  /// valid seed exists anywhere on the map. Mutates <paramref name="state"/> in place.
+  /// </summary>
+  public Map_Generation_Result generate(
+    Map_State state,
+    Map_Generation_Options options,
+    CancellationToken cancellation_token = default,
+    Tile_Drawn_Callback tile_drawn = null,
+    IProgress<int> progress = null)
+  {
+    if (state == null)
+      throw new ArgumentNullException(nameof(state));
+    if (options == null)
+      throw new ArgumentNullException(nameof(options));
+    validate_depth(options.Depth);
+
+    Random random = create_random(options.Seed, out int seed);
+    int unresolved = this.run_generation(state, options.Depth, random, cancellation_token, tile_drawn, progress);
+    return new Map_Generation_Result(unresolved, seed);
+  }
+
+  /// <summary>
+  /// Clears cells whose drawn tile is no longer terrain-compatible, reopens unlocked
+  /// drawn cells within Manhattan distance <see cref="Map_Repair_Options.Radius"/> of
+  /// every resulting hole (tile index 0), then regenerates with the requested depth.
+  /// Mutates <paramref name="state"/> in place.
+  /// </summary>
+  public Map_Generation_Result repair(
+    Map_State state,
+    Map_Repair_Options options,
+    CancellationToken cancellation_token = default,
+    Tile_Drawn_Callback tile_drawn = null,
+    IProgress<int> progress = null)
+  {
+    if (state == null)
+      throw new ArgumentNullException(nameof(state));
+    if (options == null)
+      throw new ArgumentNullException(nameof(options));
+    validate_depth(options.Depth);
+    if (options.Radius < 0)
+      throw new ArgumentOutOfRangeException(nameof(options), options.Radius, "Repair radius must be zero or greater.");
+
+    Random random = create_random(options.Seed, out int seed);
+    this.resolve_terrain_incompatible_cells(state);
+    reopen_cells_around_holes(state, options.Radius, cancellation_token);
+
+    int unresolved = this.run_generation(state, options.Depth, random, cancellation_token, tile_drawn, progress);
+    return new Map_Generation_Result(unresolved, seed);
+  }
+
+  private static void validate_depth(int depth)
+  {
+    if (depth != 1 && depth != 2)
+      throw new ArgumentException("Generation depth must be 1 or 2.", nameof(depth));
+  }
+
+  private static Random create_random(int? seed, out int actual_seed)
+  {
+    actual_seed = seed ?? new Random().Next();
+    return new Random(actual_seed);
+  }
+
+  // Faithful port of the pre-pass in repairMapToolStripMenuItem_Click: cells whose
+  // Terrain tag no longer matches the drawn tile's tag are cleared to tile 0. Positive
+  // terrain values require an exact tag match; negative values forbid the tag equal to
+  // their absolute value.
+  private void resolve_terrain_incompatible_cells(Map_State state)
+  {
+    if (this._terrain_tileset == null)
+      return;
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+      {
+        int terrain = state.Terrain[x, y];
+        if (terrain == 0)
+          continue;
+        int tile = state.Tiles[x, y];
+        if (this._terrain_tileset.Terrain_Tags.Count <= tile)
+          continue;
+        bool incompatible = terrain > 0
+          ? this._terrain_tileset.Terrain_Tags[tile] != terrain
+          : this._terrain_tileset.Terrain_Tags[tile] == -terrain;
+        if (incompatible)
+          state.Tiles[x, y] = 0;
+      }
+    }
+  }
+
+  // Faithful port of get_open_tiles_for_repair: every tile-0 cell is a repair hole, and
+  // every unlocked drawn cell within Manhattan distance `radius` of a hole is reopened
+  // (tile reset to 0, drawn cleared). Locked cells are always preserved.
+  private static void reopen_cells_around_holes(Map_State state, int radius, CancellationToken cancellation_token)
+  {
+    List<Cell> holes = new List<Cell>();
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+      {
+        if (state.Tiles[x, y] == 0)
+          holes.Add(new Cell(x, y));
+      }
+    }
+
+    foreach (Cell hole in holes)
+    {
+      cancellation_token.ThrowIfCancellationRequested();
+      for (int dy = -radius; dy <= radius; ++dy)
+      {
+        int max_dx = radius - Math.Abs(dy);
+        for (int dx = -max_dx; dx <= max_dx; ++dx)
+        {
+          int nx = hole.X + dx;
+          int ny = hole.Y + dy;
+          if (!state.is_off_map(nx, ny) && state.Drawn[nx, ny] && !state.Locked[nx, ny])
+          {
+            state.Tiles[nx, ny] = 0;
+            state.Drawn[nx, ny] = false;
+          }
+        }
+      }
+    }
+  }
+
+  // Extracted and hardened from generate_map(int depth): repeatedly picks the
+  // highest-priority open (drawn, frontier) cell, expands into a random open neighbor
+  // direction, and commits the best-weighted valid candidate tile for that neighbor.
+  // Unlike the original GUI algorithm (which only ever seeds once, at the very start,
+  // and gives up on the whole current frontier), this drains the frontier of every
+  // connected component: whenever the frontier empties out but unlocked, undrawn cells
+  // remain elsewhere on the map (e.g. separated by a locked wall), it seeds a fresh
+  // component and keeps going until every fillable cell is drawn or no valid seed
+  // exists anywhere, so a run never silently reports completion while leaving cells
+  // untouched.
+  private int run_generation(
+    Map_State state,
+    int depth,
+    Random random,
+    CancellationToken cancellation_token,
+    Tile_Drawn_Callback tile_drawn,
+    IProgress<int> progress)
+  {
+    short[,] tile_priorities = this.compute_tile_priorities(state.Tiles);
+    HashSet<int> open_tiles = collect_frontier(state);
+    int unresolved = 0;
+    int drawn_count = 0;
+
+    while (true)
+    {
+      cancellation_token.ThrowIfCancellationRequested();
+
+      if (open_tiles.Count == 0)
+      {
+        Cell? seed_cell = pick_fillable_cell(state, random);
+        if (seed_cell == null)
+          break; // Every cell is already drawn or locked; nothing left to do.
+
+        if (!this.try_seed_tile(state, seed_cell.Value, random, open_tiles, tile_drawn))
+        {
+          // No valid tile exists for any remaining fillable cell (e.g. an impossible
+          // terrain constraint, or an empty tileset config). Never silently report
+          // completion: mark every remaining fillable cell as an unresolved hole.
+          unresolved += mark_unfillable_cells_as_unresolved(state, tile_drawn);
+          break;
+        }
+
+        tile_priorities[seed_cell.Value.X, seed_cell.Value.Y] = this.tile_priority(state.Tiles[seed_cell.Value.X, seed_cell.Value.Y]);
+        continue;
+      }
+
+      int open_index = pick_first_open_tile(open_tiles, tile_priorities, state.Width, random);
+      int x = open_index % state.Width;
+      int y = open_index / state.Width;
+      int source_tile = state.Tiles[x, y];
+
+      if (!is_open_tile(state, x, y))
+      {
+        open_tiles.Remove(open_index);
+        continue;
+      }
+
+      List<byte> open_dirs = get_open_dirs(state, x, y);
+      byte dir = open_dirs[random.Next(open_dirs.Count)];
+      Cell target = neighbor_cell(x, y, dir);
+
+      List<short> candidates = this.test_valid_tiles(state, target.X, target.Y, depth, cancellation_token);
+      short chosen;
+      if (candidates.Count == 0 || candidates.Count == 1 && candidates[0] == 0)
+      {
+        ++unresolved;
+        chosen = 0;
+      }
+      else if (candidates.Count > 1)
+      {
+        List<short> weighted = new List<short>();
+        foreach (short candidate in candidates)
+        {
+          int weight = this.valid_tile_priority(source_tile, dir, candidate);
+          for (int i = 0; i < weight; ++i)
+            weighted.Add(candidate);
+        }
+        chosen = weighted[random.Next(weighted.Count)];
+      }
+      else
+      {
+        chosen = candidates[random.Next(candidates.Count)];
+      }
+
+      if (this._tileset_generation_data.identical_tiles.TryGetValue(chosen, out short canonical))
+      {
+        List<short> group = this._tileset_generation_data.identical_tiles
+          .Where(pair => pair.Value == canonical)
+          .Select(pair => pair.Key)
+          .ToList();
+        chosen = group[random.Next(group.Count)];
+      }
+
+      draw_tile(state, target.X, target.Y, chosen, open_tiles, tile_drawn);
+      tile_priorities[target.X, target.Y] = this.tile_priority(source_tile);
+      ++drawn_count;
+      progress?.Report(drawn_count);
+
+      if (!is_open_tile(state, x, y))
+        open_tiles.Remove(open_index);
+    }
+
+    return unresolved;
+  }
+
+  // Faithful port of the frontier filter at the start of generate_map(int depth) and of
+  // the full-map scan in get_open_tiles_for_repair: every drawn cell that still has an
+  // open (undrawn, unlocked) neighbor is part of the expansion frontier.
+  private static HashSet<int> collect_frontier(Map_State state)
+  {
+    HashSet<int> open_tiles = new HashSet<int>();
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+      {
+        if (state.Drawn[x, y] && is_open_tile(state, x, y))
+          open_tiles.Add(x + y * state.Width);
+      }
+    }
+    return open_tiles;
+  }
+
+  private static int pick_first_open_tile(HashSet<int> open_tiles, short[,] tile_priorities, int width, Random random)
+  {
+    short max_priority = short.MinValue;
+    foreach (int open_tile in open_tiles)
+    {
+      short priority = tile_priorities[open_tile % width, open_tile / width];
+      if (priority > max_priority)
+        max_priority = priority;
+    }
+    List<int> candidates = open_tiles.Where(open_tile => tile_priorities[open_tile % width, open_tile / width] == max_priority).ToList();
+    return candidates[random.Next(candidates.Count)];
+  }
+
+  private static bool is_open_tile(Map_State state, int x, int y) => get_open_dirs(state, x, y).Count > 0;
+
+  private static List<byte> get_open_dirs(Map_State state, int x, int y)
+  {
+    List<byte> dirs = new List<byte>();
+    if (y + 1 < state.Height && !state.Drawn[x, y + 1] && !state.Locked[x, y + 1])
+      dirs.Add(2);
+    if (x - 1 >= 0 && !state.Drawn[x - 1, y] && !state.Locked[x - 1, y])
+      dirs.Add(4);
+    if (x + 1 < state.Width && !state.Drawn[x + 1, y] && !state.Locked[x + 1, y])
+      dirs.Add(6);
+    if (y - 1 >= 0 && !state.Drawn[x, y - 1] && !state.Locked[x, y - 1])
+      dirs.Add(8);
+    return dirs;
+  }
+
+  private static Cell neighbor_cell(int x, int y, byte dir)
+  {
+    int dx = dir == 4 ? -1 : dir == 6 ? 1 : 0;
+    int dy = dir == 2 ? 1 : dir == 8 ? -1 : 0;
+    return new Cell(x + dx, y + dy);
+  }
+
+  // Finds every cell that is still eligible to receive a seed tile: not already drawn
+  // (never overwrite existing content) and not locked (locked cells are always
+  // preserved). Returns null when the whole map is already drawn/locked, so callers
+  // can stop without seeding, satisfying the "never overwrite, never loop forever"
+  // contract that the original position-sampling draw_random_tile could violate.
+  private static Cell? pick_fillable_cell(Map_State state, Random random)
+  {
+    List<Cell> fillable = new List<Cell>();
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+      {
+        if (!state.Drawn[x, y] && !state.Locked[x, y])
+          fillable.Add(new Cell(x, y));
+      }
+    }
+    return fillable.Count == 0 ? (Cell?) null : fillable[random.Next(fillable.Count)];
+  }
+
+  // Hardened replacement for draw_random_tile: the caller already guarantees `cell` is
+  // undrawn and unlocked (via pick_fillable_cell), so this only has to pick a random
+  // terrain-compatible tile index for that exact cell instead of retrying random
+  // positions. Returns false (without touching state) when no tile is valid for the
+  // cell's terrain constraint or the tileset config is empty, so the caller can treat
+  // that as "impossible to seed" rather than silently giving up after a fixed number
+  // of attempts.
+  private bool try_seed_tile(Map_State state, Cell cell, Random random, HashSet<int> open_tiles, Tile_Drawn_Callback tile_drawn)
+  {
+    Dictionary<int, Tile_Data> config = this.tileset_config_data;
+    if (config.Count == 0)
+      return false;
+
+    int index;
+    int terrain = state.Terrain[cell.X, cell.Y];
+    if (terrain != 0 && this._terrain_tileset != null)
+    {
+      List<int> candidates = terrain <= 0
+        ? config.Keys.Where(tile => this._terrain_tileset.Terrain_Tags.Count > tile && this._terrain_tileset.Terrain_Tags[tile] != -terrain).ToList()
+        : config.Keys.Where(tile => this._terrain_tileset.Terrain_Tags.Count > tile && this._terrain_tileset.Terrain_Tags[tile] == terrain).ToList();
+      if (candidates.Count == 0)
+        return false;
+      index = candidates[random.Next(candidates.Count)];
+    }
+    else
+    {
+      List<int> keys = config.Keys.ToList();
+      index = keys[random.Next(keys.Count)];
+    }
+
+    draw_tile(state, cell.X, cell.Y, index, open_tiles, tile_drawn);
+    return true;
+  }
+
+  // Guarantees a run never silently reports completion while cells remain untouched:
+  // every cell that is still undrawn and unlocked once seeding has failed everywhere is
+  // committed as an explicit unresolved hole (drawn tile 0), and counted.
+  private static int mark_unfillable_cells_as_unresolved(Map_State state, Tile_Drawn_Callback tile_drawn)
+  {
+    int count = 0;
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+      {
+        if (!state.Drawn[x, y] && !state.Locked[x, y])
+        {
+          state.Tiles[x, y] = 0;
+          state.Drawn[x, y] = true;
+          tile_drawn?.Invoke(x, y, 0);
+          ++count;
+        }
+      }
+    }
+    return count;
+  }
+
+  private static void draw_tile(Map_State state, int x, int y, int index, HashSet<int> open_tiles, Tile_Drawn_Callback tile_drawn)
+  {
+    state.Drawn[x, y] = true;
+    state.Tiles[x, y] = index;
+    if (is_open_tile(state, x, y))
+      open_tiles.Add(x + y * state.Width);
+    tile_drawn?.Invoke(x, y, index);
+  }
+
+  private short[,] compute_tile_priorities(int[,] map_tiles)
+  {
+    int width = map_tiles.GetLength(0);
+    int height = map_tiles.GetLength(1);
+    short[,] priorities = new short[width, height];
+    for (int y = 0; y < height; ++y)
+    {
+      for (int x = 0; x < width; ++x)
+        priorities[x, y] = this.tile_priority(map_tiles[x, y]);
+    }
+    return priorities;
+  }
+
+  private short tile_priority(int index)
+  {
+    return this.tileset_config_data.TryGetValue(index, out Tile_Data data) ? data.Priority : (short) -1;
+  }
+
+  private int valid_tile_priority(int index, byte dir, short other_tile)
+  {
+    if (this.tileset_config_data.TryGetValue(index, out Tile_Data data) && data.Valid_Tile_Priority[dir].TryGetValue(other_tile, out short priority))
+      return priority;
+    return 1;
+  }
+
+  // Backtracking search over the diamond of cells within Manhattan distance `depth` of
+  // (base_x, base_y), returning the list of valid tile candidates for (base_x, base_y)
+  // itself once every cell in the diamond has at least one valid tile. Hardened from
+  // the original (which mutated the real Drawn_Tiles array as scratch "committed"
+  // state during the search): this uses a local scratch copy of Drawn instead, so a
+  // cancellation or any other exception raised mid-search can never leave transient
+  // lookahead commitments behind in the real Map_State. The caller commits the chosen
+  // tile itself via draw_tile once this returns, so no cleanup step is needed here.
+  private List<short> test_valid_tiles(Map_State state, int base_x, int base_y, int depth, CancellationToken cancellation_token)
+  {
+    int[,] scratch_tiles = new int[state.Width, state.Height];
+    Array.Copy(state.Tiles, scratch_tiles, state.Tiles.Length);
+    bool[,] scratch_drawn = (bool[,]) state.Drawn.Clone();
+
+    List<Cell> locs = new List<Cell>();
+    for (int ring = 0; ring <= depth; ++ring)
+    {
+      for (int dy = -ring; dy <= ring; ++dy)
+      {
+        for (int dx = Math.Abs(dy) - ring; dx <= ring - Math.Abs(dy); ++dx)
+        {
+          if (Math.Abs(dx) + Math.Abs(dy) == ring
+            && !state.is_off_map(base_x + dx, base_y + dy)
+            && (!scratch_drawn[base_x + dx, base_y + dy]
+              || state.Terrain[base_x + dx, base_y + dy] != 0 && this._terrain_tileset != null && state.Tiles[base_x + dx, base_y + dy] == 0))
+            locs.Add(new Cell(base_x + dx, base_y + dy));
+        }
+      }
+    }
+
+    int[] candidate_index = new int[locs.Count];
+    int cursor = 0;
+    List<short>[] tiles = new List<short>[candidate_index.Length];
+    tiles[cursor] = new List<short>(this.valid_tiles(state, locs[cursor].X, locs[cursor].Y, scratch_tiles, scratch_drawn));
+    if (tiles[cursor].Count == 0 || cursor + 1 >= candidate_index.Length || tiles[cursor].Count == 1 && tiles[cursor][0] == 0)
+      return tiles[cursor];
+
+    candidate_index[cursor] = 0;
+    scratch_drawn[locs[cursor].X, locs[cursor].Y] = true;
+    scratch_tiles[locs[cursor].X, locs[cursor].Y] = tiles[cursor][candidate_index[cursor]];
+
+    while (cursor != -1)
+    {
+      cancellation_token.ThrowIfCancellationRequested();
+      if (this.valid_surrounding_tiles(state, cursor, candidate_index.Length, scratch_tiles, scratch_drawn, locs, tiles))
+      {
+        if (cursor + 2 == candidate_index.Length)
+        {
+          for (int i = cursor; i > 0; --i)
+          {
+            scratch_drawn[locs[i].X, locs[i].Y] = false;
+            scratch_tiles[locs[i].X, locs[i].Y] = 0;
+          }
+          cursor = 0;
+          ++candidate_index[cursor];
+          if (candidate_index[cursor] < tiles[cursor].Count)
+            scratch_tiles[locs[cursor].X, locs[cursor].Y] = tiles[cursor][candidate_index[cursor]];
+          else
+            break;
+        }
+        else
+        {
+          ++cursor;
+          candidate_index[cursor] = 0;
+          scratch_drawn[locs[cursor].X, locs[cursor].Y] = true;
+          scratch_tiles[locs[cursor].X, locs[cursor].Y] = tiles[cursor][candidate_index[cursor]];
+        }
+      }
+      else
+      {
+        do
+        {
+          ++candidate_index[cursor];
+          if (cursor == 0)
+          {
+            --candidate_index[cursor];
+            tiles[cursor].RemoveAt(candidate_index[cursor]);
+          }
+          if (candidate_index[cursor] >= tiles[cursor].Count)
+          {
+            scratch_drawn[locs[cursor].X, locs[cursor].Y] = false;
+            scratch_tiles[locs[cursor].X, locs[cursor].Y] = 0;
+            --cursor;
+          }
+          else
+            goto assign_next_candidate;
+        }
+        while (cursor != -1);
+        continue;
+        assign_next_candidate:
+        scratch_tiles[locs[cursor].X, locs[cursor].Y] = tiles[cursor][candidate_index[cursor]];
+      }
+    }
+
+    return tiles[0];
+  }
+
+  private bool valid_surrounding_tiles(Map_State state, int cursor, int length, int[,] scratch_tiles, bool[,] scratch_drawn, List<Cell> locs, List<short>[] tiles)
+  {
+    for (int i = cursor + 1; i < length; ++i)
+    {
+      tiles[i] = new List<short>(this.valid_tiles(state, locs[i].X, locs[i].Y, scratch_tiles, scratch_drawn));
+      if (tiles[i].Count <= 0)
+        return false;
+    }
+    return true;
+  }
+
+  // Faithful port of valid_tiles: for an already-open terrain cell it returns every tile
+  // matching (positive tag) or not forbidden by (negative tag) the required terrain.
+  // Otherwise it intersects the valid-neighbor sets contributed by every already-drawn
+  // orthogonal neighbor (canonicalized through identical_tiles), then applies the same
+  // signed terrain constraint to the result. `drawn` is the scratch committed-state
+  // array from test_valid_tiles (real map state plus any in-progress lookahead picks),
+  // never the live Map_State.Drawn array.
+  private HashSet<short> valid_tiles(Map_State state, int x, int y, int[,] map_tiles, bool[,] drawn)
+  {
+    if (map_tiles[x, y] == 0 && state.Terrain[x, y] != 0 && drawn[x, y] && this._terrain_tileset != null)
+    {
+      int terrain = state.Terrain[x, y];
+      return terrain > 0
+        ? new HashSet<short>(Enumerable.Range(0, this._terrain_tileset.Terrain_Tags.Count).Select(i => (short) i).Where(tile => this._terrain_tileset.Terrain_Tags[tile] == terrain))
+        : new HashSet<short>(Enumerable.Range(0, this._terrain_tileset.Terrain_Tags.Count).Select(i => (short) i).Where(tile => this._terrain_tileset.Terrain_Tags[tile] != -terrain));
+    }
+
+    List<byte> known_dirs = new List<byte>();
+    for (int i = 0; i < 4; ++i)
+    {
+      byte dir = (byte) ((i + 1) * 2);
+      Cell offset = Reverse_Dirs[dir];
+      int nx = x + offset.X;
+      int ny = y + offset.Y;
+      if (nx < 0 || nx >= state.Width || ny < 0 || ny >= state.Height || !drawn[nx, ny])
+        continue;
+      short neighbor_tile = (short) map_tiles[nx, ny];
+      if (this._tileset_generation_data.identical_tiles.TryGetValue(neighbor_tile, out short canonical))
+        neighbor_tile = canonical;
+      if (this.tileset_config_data.ContainsKey(neighbor_tile))
+        known_dirs.Add(dir);
+    }
+
+    if (known_dirs.Count == 0)
+      return new HashSet<short>() { 0 };
+
+    byte first_dir = known_dirs[0];
+    Cell first_offset = Reverse_Dirs[first_dir];
+    short first_tile = (short) map_tiles[x + first_offset.X, y + first_offset.Y];
+    if (this._tileset_generation_data.identical_tiles.TryGetValue(first_tile, out short first_canonical))
+      first_tile = first_canonical;
+
+    HashSet<short> result = new HashSet<short>(this.tileset_config_data[first_tile].Valid_Tile_Priority[first_dir].Keys);
+    foreach (byte dir in known_dirs)
+    {
+      if (dir == first_dir)
+        continue;
+      Cell offset = Reverse_Dirs[dir];
+      short neighbor_tile = (short) map_tiles[x + offset.X, y + offset.Y];
+      if (this._tileset_generation_data.identical_tiles.TryGetValue(neighbor_tile, out short canonical))
+        neighbor_tile = canonical;
+      result.IntersectWith(this.tileset_config_data[neighbor_tile].Valid_Tile_Priority[dir].Keys);
+    }
+
+    if (result.Count > 0 && state.Terrain[x, y] != 0 && this._terrain_tileset != null)
+    {
+      int terrain = state.Terrain[x, y];
+      result = terrain <= 0
+        ? new HashSet<short>(result.Where(tile => this._terrain_tileset.Terrain_Tags.Count > tile && this._terrain_tileset.Terrain_Tags[tile] != -terrain))
+        : new HashSet<short>(result.Where(tile => this._terrain_tileset.Terrain_Tags.Count > tile && this._terrain_tileset.Terrain_Tags[tile] == terrain));
+    }
+
+    return result;
+  }
+}

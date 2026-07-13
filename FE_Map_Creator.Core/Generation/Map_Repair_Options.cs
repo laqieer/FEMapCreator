@@ -1,0 +1,27 @@
+#nullable disable
+namespace FE_Map_Creator.Generation;
+
+/// <summary>
+/// Options controlling a map repair pass (<see cref="Map_Generation_Engine.repair"/>).
+/// </summary>
+public sealed class Map_Repair_Options
+{
+  /// <summary>
+  /// Manhattan-distance radius (in tiles) around every terrain-incompatible or
+  /// already-empty (tile index 0) cell that gets reopened for regeneration. Must be
+  /// zero or greater; zero means only the empty cells themselves are reopened.
+  /// </summary>
+  public int Radius { get; init; }
+
+  /// <summary>
+  /// Lookahead depth used for the regeneration pass that follows the repair scan. Must
+  /// be 1 or 2 (matches the GUI's DEPTH/MAX_DEPTH constants).
+  /// </summary>
+  public int Depth { get; init; } = 1;
+
+  /// <summary>
+  /// Random seed to use. When null, the engine generates one and reports it back via
+  /// <see cref="Map_Generation_Result.Seed"/> so a run can be reproduced later.
+  /// </summary>
+  public int? Seed { get; init; }
+}

@@ -4,6 +4,7 @@
 // MVID: 892ADB68-6185-447F-AABB-429C2C7B2C22
 // Assembly location: C:\FEMapCreator\FE_Map_Creator.exe
 
+using FE_Map_Creator.Generation;
 using FEXNA_Library;
 using System;
 using System.Collections;
@@ -366,68 +367,35 @@ public class FE_Map_Creator_Form : Form
 
   protected void save_map(string filename, int[,] map_tiles, string tileset_filename, int filter)
   {
-    int length1 = map_tiles.GetLength(0);
-    int length2 = map_tiles.GetLength(1);
+    Map_Codec_Registry registry = new Map_Codec_Registry();
+    Map_Document document = new Map_Document(map_tiles, tileset_filename);
+    Map_Write_Options write_options = new Map_Write_Options
+    {
+      Tileset = tileset_filename,
+      Tileset_Image_Source = tileset_filename
+    };
+    Map_Format? format = null;
     switch (filter)
     {
       case 1:
-        using (StreamWriter streamWriter = new StreamWriter(filename))
-        {
-          streamWriter.WriteLine(tileset_filename);
-          streamWriter.WriteLine($"{length2.ToString()} {length1.ToString()}");
-          for (int index1 = 0; index1 < length2; ++index1)
-          {
-            string str = "";
-            for (int index2 = 0; index2 < length1; ++index2)
-            {
-              str += map_tiles[index2, index1].ToString();
-              if (index2 < length1 - 1)
-                str += " ";
-            }
-            streamWriter.WriteLine(str);
-          }
-          break;
-        }
+        format = Map_Format.Text;
+        break;
       case 2:
-        using (Stream output = (Stream) new FileStream(filename, FileMode.Create))
-        {
-          using (BinaryWriter binaryWriter = new BinaryWriter(output))
-          {
-            for (int index3 = 0; index3 < length2; ++index3)
-            {
-              for (int index4 = 0; index4 < length1; ++index4)
-                binaryWriter.Write((short) (map_tiles[index4, index3] * 32 /*0x20*/));
-            }
-            break;
-          }
-        }
+        format = Map_Format.Mar;
+        break;
       case 3:
-        using (Stream stream = (Stream) new FileStream(filename, FileMode.Create))
+        format = Map_Format.Tmx;
+        break;
+      default:
+        try { format = registry.format_from_path(filename); }
+        catch (NotSupportedException ex)
         {
-          using (StreamWriter streamWriter = new StreamWriter(stream))
-          {
-            streamWriter.WriteLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-            streamWriter.WriteLine(string.Format("<map version=\"1.0\" orientation=\"orthogonal\" width=\"{0}\" height=\"{1}\" tilewidth=\"{2}\" tileheight=\"{2}\">", (object) length1, (object) length2, (object) 16 /*0x10*/));
-            streamWriter.WriteLine(string.Format(" <tileset firstgid=\"{0}\" name=\"{1}\" tilewidth=\"{2}\" tileheight=\"{2}\">", (object) 1, (object) tileset_filename, (object) 16 /*0x10*/));
-            streamWriter.WriteLine($"  <image source=\"{tileset_filename}\" trans=\"ffffff\"/>");
-            streamWriter.WriteLine(" </tileset>");
-            streamWriter.WriteLine($" <layer name=\"Tile Layer 1\" width=\"{length1}\" height=\"{length2}\">");
-            streamWriter.WriteLine("  <properties>");
-            streamWriter.WriteLine("   <property name=\"Main\" value =\"\"/>");
-            streamWriter.WriteLine("  </properties>");
-            streamWriter.WriteLine("  <data>");
-            for (int index5 = 0; index5 < length2; ++index5)
-            {
-              for (int index6 = 0; index6 < length1; ++index6)
-                streamWriter.WriteLine($"  <tile gid=\"{map_tiles[index6, index5] + 1}\"/>");
-            }
-            streamWriter.WriteLine("  </data>");
-            streamWriter.WriteLine(" </layer>");
-            streamWriter.Write("</map>");
-            break;
-          }
+          MessageBox.Show(this, ex.Message, "Unsupported Format", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+          return;
         }
+        break;
     }
+    registry.write(filename, document, write_options, format);
   }
 
   protected void load_map(int[,] map_tiles)
@@ -451,64 +419,49 @@ public class FE_Map_Creator_Form : Form
 
   protected int[,] load_text_map(string filename, bool just_return_data = false)
   {
-    using (StreamReader streamReader = new StreamReader(filename))
+    try
     {
-      try
+      Map_Codec_Registry registry = new Map_Codec_Registry();
+      Map_Document document = registry.read(filename, null, Map_Format.Text);
+      if (!just_return_data)
       {
-        string filename1 = streamReader.ReadLine();
-        string[] strArray1 = streamReader.ReadLine().Split(' ');
-        int int32_1 = Convert.ToInt32(strArray1[0]);
-        int int32_2 = Convert.ToInt32(strArray1[1]);
-        int[,] numArray = new int[int32_2, int32_1];
-        for (int index1 = 0; index1 < int32_1; ++index1)
+        this.Text = $"Map Editor - {Path.GetFileNameWithoutExtension(filename)}";
+        if (this.load_tileset(document.Tileset))
         {
-          string[] strArray2 = streamReader.ReadLine().Split(' ');
-          for (int index2 = 0; index2 < int32_2; ++index2)
-            numArray[index2, index1] = Convert.ToInt32(strArray2[index2]);
+          using (new Bitmap(this.LoadTilesetDialog.FileName))
+            this.load_tileset_image();
         }
-        if (!just_return_data)
-        {
-          this.Text = $"Map Editor - {Path.GetFileNameWithoutExtension(filename)}";
-          if (this.load_tileset(filename1))
-          {
-            using (new Bitmap(this.LoadTilesetDialog.FileName))
-              this.load_tileset_image();
-          }
-        }
-        return numArray;
       }
-      catch (FormatException)
-      {
-        int num = (int) MessageBox.Show("Map failed to load", "Invalid map", MessageBoxButtons.OK, MessageBoxIcon.Hand);
-      }
+      return document.Tiles;
+    }
+    catch (Exception ex) when (ex is InvalidDataException || ex is FormatException || ex is IOException)
+    {
+      if (!just_return_data)
+        MessageBox.Show(this, ex.Message, "Invalid map", MessageBoxButtons.OK, MessageBoxIcon.Hand);
     }
     return (int[,]) null;
   }
 
   protected int[,] load_bytewise_map(string filename)
   {
-    using (FileStream input = new FileStream(filename, FileMode.Open))
+    try
     {
-      using (BinaryReader binaryReader = new BinaryReader((Stream) input))
+      int width = (int) this.WidthUpDown.Value;
+      int height = (int) this.HeightUpDown.Value;
+      Map_Codec_Registry registry = new Map_Codec_Registry();
+      Map_Read_Options read_options = new Map_Read_Options
       {
-        try
-        {
-          int length1 = (int) this.WidthUpDown.Value;
-          int length2 = (int) this.HeightUpDown.Value;
-          int[,] numArray = new int[length1, length2];
-          for (int index1 = 0; index1 < length2; ++index1)
-          {
-            for (int index2 = 0; index2 < length1; ++index2)
-              numArray[index2, index1] = (int) binaryReader.ReadInt16() / 32 /*0x20*/;
-          }
-          this.Text = $"Map Editor - {Path.GetFileNameWithoutExtension(filename)}";
-          return numArray;
-        }
-        catch (FormatException)
-        {
-          int num = (int) MessageBox.Show("Map failed to load", "Invalid map", MessageBoxButtons.OK, MessageBoxIcon.Hand);
-        }
-      }
+        Width = width,
+        Height = height,
+        Tileset = this.Tileset_Name
+      };
+      Map_Document document = registry.read(filename, read_options, Map_Format.Mar);
+      this.Text = $"Map Editor - {Path.GetFileNameWithoutExtension(filename)}";
+      return document.Tiles;
+    }
+    catch (Exception ex) when (ex is InvalidDataException || ex is FormatException || ex is IOException)
+    {
+      MessageBox.Show(this, ex.Message, "Invalid map", MessageBoxButtons.OK, MessageBoxIcon.Hand);
     }
     return (int[,]) null;
   }
@@ -517,76 +470,29 @@ public class FE_Map_Creator_Form : Form
   {
     try
     {
-      XDocument xdocument = XDocument.Load(filename);
-      int int32_1 = Convert.ToInt32(xdocument.Root.Attribute((XName) "width").Value);
-      int int32_2 = Convert.ToInt32(xdocument.Root.Attribute((XName) "height").Value);
-      string filename1 = xdocument.Root.Element((XName) "tileset").Element((XName) "image").Attribute((XName) "source").Value;
-      int int32_3 = Convert.ToInt32(xdocument.Root.Element((XName) "tileset").Attribute((XName) "firstgid").Value);
-      int[,] map_data1 = new int[int32_1, int32_2];
-      XElement layer = xdocument.Root.Element((XName) "layer");
-      Convert.ToInt32(layer.Attribute((XName) "width").Value);
-      Convert.ToInt32(layer.Attribute((XName) "height").Value);
-      this.read_xml_layer(layer, int32_3, map_data1, int32_1, int32_2);
-      List<int[,]> numArrayList = new List<int[,]>();
-      numArrayList.Add(map_data1);
-      if (xdocument.Root.Elements((XName) "layer").Count<XElement>() > 1)
-      {
-        int[,] map_data2 = new int[int32_1, int32_2];
-        foreach (XElement element in xdocument.Root.Elements((XName) "layer"))
-          this.read_xml_layer(element, int32_3, map_data2, int32_1, int32_2);
-        numArrayList.Add(map_data2);
-      }
+      Map_Codec_Registry registry = new Map_Codec_Registry();
+      Map_Document document = registry.read(filename, null, Map_Format.Tmx);
+      List<int[,]> result = new List<int[,]>();
+      result.Add(document.Tiles);
       if (!just_return_data)
       {
         this.Text = $"Map Editor - {Path.GetFileNameWithoutExtension(filename)}";
-        if (this.load_tileset(filename1))
+        string tileset_source = !string.IsNullOrWhiteSpace(document.Tileset_Image_Source)
+          ? document.Tileset_Image_Source : document.Tileset;
+        if (this.load_tileset(tileset_source))
         {
           using (new Bitmap(this.LoadTilesetDialog.FileName))
             this.load_tileset_image();
         }
       }
-      return numArrayList;
+      return result;
     }
-    catch (IndexOutOfRangeException)
+    catch (Exception ex) when (ex is InvalidDataException || ex is NotSupportedException || ex is FormatException || ex is IOException)
     {
-      int num = (int) MessageBox.Show("Tmx file failed to load", "Error loading file", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+      if (!just_return_data)
+        MessageBox.Show(this, ex.Message, "Error loading file", MessageBoxButtons.OK, MessageBoxIcon.Hand);
     }
     return (List<int[,]>) null;
-  }
-
-  private void read_xml_layer(
-    XElement layer,
-    int tileset_base_index,
-    int[,] map_data,
-    int map_width,
-    int map_height)
-  {
-    int int32_1 = Convert.ToInt32(layer.Attribute((XName) "width").Value);
-    int int32_2 = Convert.ToInt32(layer.Attribute((XName) "height").Value);
-    int num1 = 0;
-    int num2 = 0;
-    int num3 = int32_1;
-    int num4 = int32_2;
-    if (layer.Element((XName) "properties").Elements((XName) "property").Any<XElement>((Func<XElement, bool>) (property => property.Attribute((XName) "name").Value == "Width")))
-    {
-      num1 = Convert.ToInt32(layer.Element((XName) "properties").Elements((XName) "property").First<XElement>((Func<XElement, bool>) (property => property.Attribute((XName) "name").Value == "X")).Attribute((XName) "value").Value);
-      num2 = Convert.ToInt32(layer.Element((XName) "properties").Elements((XName) "property").First<XElement>((Func<XElement, bool>) (property => property.Attribute((XName) "name").Value == "Y")).Attribute((XName) "value").Value);
-      num3 = Convert.ToInt32(layer.Element((XName) "properties").Elements((XName) "property").First<XElement>((Func<XElement, bool>) (property => property.Attribute((XName) "name").Value == "Width")).Attribute((XName) "value").Value);
-      num4 = Convert.ToInt32(layer.Element((XName) "properties").Elements((XName) "property").First<XElement>((Func<XElement, bool>) (property => property.Attribute((XName) "name").Value == "Height")).Attribute((XName) "value").Value);
-    }
-    int num5 = 0;
-    foreach (string str in layer.Element((XName) "data").Elements((XName) "tile").Select<XElement, string>((Func<XElement, string>) (x => x.Attribute((XName) "gid").Value)))
-    {
-      int index1 = num5 % int32_1;
-      int index2 = num5 / int32_1;
-      if (index1 < map_width && index2 < map_height && index1 >= num1 && index2 >= num2 && index1 < num1 + num3 && index2 < num2 + num4)
-      {
-        int num6 = Convert.ToInt32(str) - tileset_base_index;
-        if (num6 > -1)
-          map_data[index1, index2] = num6;
-      }
-      ++num5;
-    }
   }
 
   protected bool load_tileset() => this.load_tileset("");
@@ -676,7 +582,7 @@ public class FE_Map_Creator_Form : Form
     this.load_tileset_image();
     this.Open_Tiles = new HashSet<int>();
     this.draw_random_tile();
-    this.generate_map();
+    this.generate_map(this.Zoom);
     this.refresh_panel_size();
     this.MapPicture.Invalidate();
   }
@@ -996,161 +902,80 @@ public class FE_Map_Creator_Form : Form
     return pointList;
   }
 
-  protected int repair_map()
+  private void invoke_on_ui(Action action)
   {
-    int depth = (int) this.DepthUpDown.Value;
-    this.get_open_tiles_for_repair((int) this.DistUpDown.Value);
-    this.refresh_panel_size();
-    this.MapPicture.Invalidate();
-    Thread.Sleep(25);
-    int map = this.generate_map(depth);
-    this.MapPicture.Invalidate();
-    this.Updating = false;
-    return map;
-  }
-
-  private void get_open_tiles_for_repair(int search_dist)
-  {
-    HashSet<Point> pointSet = new HashSet<Point>();
-    for (int y = 0; y < this.Map_Height; ++y)
+    try
     {
-      for (int x = 0; x < this.Map_Width; ++x)
-      {
-        if (this.Map_Tiles[x, y] == 0)
-          pointSet.Add(new Point(x, y));
-      }
-    }
-    foreach (Point point in pointSet)
-    {
-      for (int index1 = 0; index1 <= search_dist; ++index1)
-      {
-        for (int index2 = -index1; index2 <= index1; ++index2)
-        {
-          for (int index3 = Math.Abs(index2) - index1; index3 <= index1 - Math.Abs(index2); ++index3)
-          {
-            if (!this.is_off_map(point.X + index3, point.Y + index2) && this.Drawn_Tiles[point.X + index3, point.Y + index2] && !this.Locked_Tiles[point.X + index3, point.Y + index2])
-            {
-              this.Map_Tiles[point.X + index3, point.Y + index2] = 0;
-              this.Drawn_Tiles[point.X + index3, point.Y + index2] = false;
-            }
-          }
-        }
-      }
-    }
-    for (int index4 = 0; index4 < this.Map_Height; ++index4)
-    {
-      for (int index5 = 0; index5 < this.Map_Width; ++index5)
-      {
-        if (this.Drawn_Tiles[index5, index4])
-          this.Open_Tiles.Add(index5 + index4 * this.Map_Width);
-      }
-    }
-    if (this.Open_Tiles.Count != 0)
-      return;
-    this.draw_random_tile();
-  }
-
-  protected void generate_map()
-  {
-    this.refresh_panel_size();
-    int map = this.generate_map(1);
-    for (int index = 0; index < 0; ++index)
-    {
-      if (map > 0)
-      {
-        this.get_open_tiles_for_repair(1);
-        map = this.generate_map(1);
-      }
-    }
-    this.MapPicture.Invalidate();
-    this.Updating = false;
-  }
-
-  protected int generate_map(int depth)
-  {
-    int map = 0;
-    int count = this.Open_Tiles.Count;
-    this.Open_Tiles = new HashSet<int>(this.Open_Tiles.Where<int>((Func<int, bool>) (open_tile => this.is_open_tile(open_tile % this.Map_Width, open_tile / this.Map_Width))));
-    short[,] tile_priorities = this.tile_priorities(this.Map_Tiles);
-    int num1 = 0;
-    while (this.Open_Tiles.Count > 0)
-    {
-      int num2 = this.first_open_tile(tile_priorities);
-      int x = num2 % this.Map_Width;
-      int y = num2 / this.Map_Width;
-      int mapTile = this.Map_Tiles[x, y];
-      if (!this.is_open_tile(x, y))
-      {
-        this.Open_Tiles.Remove(num2);
-      }
+      if (this.IsDisposed || !this.IsHandleCreated)
+        return;
+      if (this.InvokeRequired)
+        this.BeginInvoke(action);
       else
-      {
-        List<byte> byteList = this.open_dirs(x, y);
-        byte dir = byteList[FE_Map_Creator_Form.rand.Next(byteList.Count)];
-        int num3 = x;
-        int num4;
-        switch (dir)
-        {
-          case 4:
-            num4 = -1;
-            break;
-          case 6:
-            num4 = 1;
-            break;
-          default:
-            num4 = 0;
-            break;
-        }
-        int index1 = num3 + num4;
-        int num5 = y;
-        int num6;
-        switch (dir)
-        {
-          case 2:
-            num6 = 1;
-            break;
-          case 8:
-            num6 = -1;
-            break;
-          default:
-            num6 = 0;
-            break;
-        }
-        int index2 = num5 + num6;
-        List<short> source1 = this.test_valid_tiles(index1, index2, depth);
-        short index;
-        if (source1.Count == 0 || source1.Count == 1 && source1.First<short>() == (short) 0)
-        {
-          ++map;
-          index = (short) 0;
-        }
-        else if (source1.Count > 1)
-        {
-          List<short> shortList = new List<short>();
-          foreach (short other_tile in source1)
-          {
-            for (int index3 = 0; index3 < this.valid_tile_priority(mapTile, dir, other_tile); ++index3)
-              shortList.Add(other_tile);
-          }
-          index = shortList[FE_Map_Creator_Form.rand.Next(shortList.Count)];
-        }
-        else
-          index = source1.ElementAt<short>(FE_Map_Creator_Form.rand.Next(source1.Count));
-        if (this.Tileset_Generator_Data.identical_tiles.ContainsKey(index))
-        {
-          HashSet<short> source2 = new HashSet<short>(this.Tileset_Generator_Data.identical_tiles.Keys.Where<short>((Func<short, bool>) (tile => (int) this.Tileset_Generator_Data.identical_tiles[tile] == (int) this.Tileset_Generator_Data.identical_tiles[index])));
-          index = source2.ElementAt<short>(FE_Map_Creator_Form.rand.Next(source2.Count<short>()));
-        }
-        this.draw_tile(index1, index2, (int) index);
-        tile_priorities[index1, index2] = this.tile_priority(this.Map_Tiles[x, y]);
-        ++count;
-        if (!this.is_open_tile(x, y))
-          this.Open_Tiles.Remove(num2);
-        ++num1;
-        this.MapPicture.Invalidate(new Rectangle(index1 * 16 /*0x10*/ * this.Zoom, index2 * 16 /*0x10*/ * this.Zoom, 16 /*0x10*/ * this.Zoom, 16 /*0x10*/ * this.Zoom));
-      }
+        action();
     }
-    return map;
+    catch (ObjectDisposedException) { }
+    catch (InvalidOperationException) { }
+  }
+
+  protected void repair_map(int depth, int radius, int zoom)
+  {
+    try
+    {
+      Map_State state = new Map_State(this.Map_Tiles, this.Drawn_Tiles, this.Locked_Tiles, this.Terrain_Types);
+      Map_Generation_Engine engine = new Map_Generation_Engine(this.Tileset_Generator_Data, this.tileset_data);
+      Map_Repair_Options options = new Map_Repair_Options { Depth = depth, Radius = radius };
+      Tile_Drawn_Callback callback = (int x, int y, int tile_index) =>
+      {
+        Rectangle rect = new Rectangle(x * 16 /*0x10*/ * zoom, y * 16 /*0x10*/ * zoom, 16 /*0x10*/ * zoom, 16 /*0x10*/ * zoom);
+        this.invoke_on_ui(() => this.MapPicture.Invalidate(rect));
+      };
+      this.invoke_on_ui(() =>
+      {
+        this.refresh_panel_size();
+        this.MapPicture.Invalidate();
+      });
+      Thread.Sleep(25);
+      engine.repair(state, options, CancellationToken.None, callback);
+      this.invoke_on_ui(() => this.MapPicture.Invalidate());
+    }
+    catch (Exception ex)
+    {
+      this.invoke_on_ui(() => MessageBox.Show(this, ex.Message, "Map Repair Error", MessageBoxButtons.OK, MessageBoxIcon.Error));
+    }
+    finally
+    {
+      this.Updating = false;
+    }
+  }
+
+  protected void generate_map(int zoom)
+  {
+    try
+    {
+      Map_State state = new Map_State(this.Map_Tiles, this.Drawn_Tiles, this.Locked_Tiles, this.Terrain_Types);
+      Map_Generation_Engine engine = new Map_Generation_Engine(this.Tileset_Generator_Data, this.tileset_data);
+      Map_Generation_Options options = new Map_Generation_Options { Depth = 1 };
+      Tile_Drawn_Callback callback = (int x, int y, int tile_index) =>
+      {
+        Rectangle rect = new Rectangle(x * 16 /*0x10*/ * zoom, y * 16 /*0x10*/ * zoom, 16 /*0x10*/ * zoom, 16 /*0x10*/ * zoom);
+        this.invoke_on_ui(() => this.MapPicture.Invalidate(rect));
+      };
+      this.invoke_on_ui(() =>
+      {
+        this.refresh_panel_size();
+        this.MapPicture.Invalidate();
+      });
+      engine.generate(state, options, CancellationToken.None, callback);
+      this.invoke_on_ui(() => this.MapPicture.Invalidate());
+    }
+    catch (Exception ex)
+    {
+      this.invoke_on_ui(() => MessageBox.Show(this, ex.Message, "Map Generation Error", MessageBoxButtons.OK, MessageBoxIcon.Error));
+    }
+    finally
+    {
+      this.Updating = false;
+    }
   }
 
   private void invalidate_map(HashSet<Rectangle> rects)
@@ -2749,18 +2574,15 @@ label_27:
           {
             this.Map_Tiles[x, y] = mapTiles[x, y];
             this.Drawn_Tiles[x, y] = true;
-            if (this.is_open_tile(x, y))
-              this.Open_Tiles.Add(x + y * this.Map_Width);
           }
         }
       }
     }
     if (this.Terrain_Types == null || this.Map_Width != this.Terrain_Types.GetLength(0) || this.Map_Height != this.Terrain_Types.GetLength(1))
       this.Terrain_Types = new int[this.Map_Width, this.Map_Height];
-    if (this.Open_Tiles.Count == 0)
-      this.draw_random_tile();
     this.MapPicture.Invalidate();
-    new Thread(new ThreadStart(this.generate_map)).Start();
+    int zoom = this.Zoom;
+    new Thread(() => this.generate_map(zoom)).Start();
   }
 
   private void repairMapToolStripMenuItem_Click(object sender, EventArgs e)
@@ -2785,7 +2607,10 @@ label_27:
       this.refresh_panel_size();
     this.refresh_panel_size();
     this.copy_map_to_undo();
-    new Thread((ThreadStart) (() => this.repair_map()))
+    int depth = (int) this.DepthUpDown.Value;
+    int radius = (int) this.DistUpDown.Value;
+    int zoom = this.Zoom;
+    new Thread((ThreadStart) (() => this.repair_map(depth, radius, zoom)))
     {
       IsBackground = false
     }.Start();

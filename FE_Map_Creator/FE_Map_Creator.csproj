@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FEXNA_Library\FEXNA_Library.csproj" />
+    <ProjectReference Include="..\FE_Map_Creator.Core\FE_Map_Creator.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

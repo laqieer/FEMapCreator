@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>FE_Map_Creator.Cli</RootNamespace>
+    <AssemblyName>FE_Map_Creator.Cli</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FE_Map_Creator.Core\FE_Map_Creator.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\Terrain_Data.xml" Link="Terrain_Data.xml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Tileset_Data.xml" Link="Tileset_Data.xml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Tilesets\**\*" Link="Tilesets\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Tileset Generation Data\**\*" Link="Tileset Generation Data\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

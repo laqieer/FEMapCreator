@@ -1,8 +1,6 @@
-﻿// Decompiled with JetBrains decompiler
-// Type: FE_Map_Creator.Tile_Matching_Data
-// Assembly: FE_Map_Creator, Version=1.0.3.0, Culture=neutral, PublicKeyToken=null
-// MVID: 892ADB68-6185-447F-AABB-429C2C7B2C22
-// Assembly location: C:\FEMapCreator\FE_Map_Creator.exe
+// Ported from FE_Map_Creator\Tile_Matching_Data.cs into FE_Map_Creator.Core so it can be
+// shared between the WinForms GUI and other callers (CLI, tests). Made public (was
+// internal) since it now lives in a separate assembly; logic is otherwise unchanged.
 
 using System;
 using System.Collections.Generic;
@@ -11,7 +9,7 @@ using System.Linq;
 #nullable disable
 namespace FE_Map_Creator;
 
-internal class Tile_Matching_Data
+public class Tile_Matching_Data
 {
   private Dictionary<Tile_Directions, Dictionary<int, List<short>>> Same_Directions;
   private Dictionary<short, short> Identical_Tiles = new Dictionary<short, short>();

@@ -1,8 +1,7 @@
-﻿// Decompiled with JetBrains decompiler
-// Type: FE_Map_Creator.Tileset_Generation_Data
-// Assembly: FE_Map_Creator, Version=1.0.3.0, Culture=neutral, PublicKeyToken=null
-// MVID: 892ADB68-6185-447F-AABB-429C2C7B2C22
-// Assembly location: C:\FEMapCreator\FE_Map_Creator.exe
+// Ported from FE_Map_Creator\Tileset_Generation_Data.cs into FE_Map_Creator.Core so it
+// can be shared between the WinForms GUI and other callers (CLI, tests). Made public
+// (was internal) since it now lives in a separate assembly. Binary layout, generation_data
+// weights, and identical_tiles semantics are otherwise unchanged from the decompiled source.
 
 using MapGenDictionaryExtension;
 using System;
@@ -13,7 +12,7 @@ using System.Linq;
 #nullable disable
 namespace FE_Map_Creator;
 
-internal class Tileset_Generation_Data
+public class Tileset_Generation_Data
 {
   private Dictionary<short, short> Identical_Tiles = new Dictionary<short, short>();
   private Dictionary<int, Tile_Data> Generation_Data = new Dictionary<int, Tile_Data>();

@@ -1,0 +1,57 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+#nullable disable
+namespace FE_Map_Creator;
+
+public sealed class Map_Codec_Registry
+{
+  private readonly Dictionary<Map_Format, IMap_Codec> Codecs;
+
+  public Map_Codec_Registry()
+  {
+    this.Codecs = new Dictionary<Map_Format, IMap_Codec>()
+    {
+      { Map_Format.Text, new Text_Map_Codec() },
+      { Map_Format.Mar, new Mar_Map_Codec() },
+      { Map_Format.Tmx, new Tmx_Map_Codec() }
+    };
+  }
+
+  public IMap_Codec codec(Map_Format format) => this.Codecs[format];
+
+  public Map_Format format_from_path(string filename)
+  {
+    if (string.IsNullOrWhiteSpace(filename))
+      throw new ArgumentException("A map filename is required.", nameof (filename));
+    switch (Path.GetExtension(filename).ToLowerInvariant())
+    {
+      case ".map":
+        return Map_Format.Text;
+      case ".mar":
+        return Map_Format.Mar;
+      case ".tmx":
+        return Map_Format.Tmx;
+      default:
+        throw new NotSupportedException($"Unsupported map extension \"{Path.GetExtension(filename)}\".");
+    }
+  }
+
+  public Map_Document read(
+    string filename,
+    Map_Read_Options options = null,
+    Map_Format? format = null)
+  {
+    return this.codec(format ?? this.format_from_path(filename)).read(filename, options);
+  }
+
+  public void write(
+    string filename,
+    Map_Document document,
+    Map_Write_Options options = null,
+    Map_Format? format = null)
+  {
+    this.codec(format ?? this.format_from_path(filename)).write(filename, document, options);
+  }
+}
