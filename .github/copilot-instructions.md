@@ -42,4 +42,4 @@
 - Text `.map` files use line 1 for the tileset name/identifier, line 2 as `<height> <width>`, then `height` rows containing `width` tile indices. In memory the same data is stored as `[width, height]`. `.mar` stores row-major signed 16-bit values as `tileIndex * 32`; TMX GIDs are converted relative to `firstgid`.
 - Image-heavy code deliberately disposes replaced `Bitmap`, `Image`, and `Graphics` instances and pairs `LockBits` with `UnlockBits`. Preserve that ownership pattern to avoid locked asset files and GDI handle leaks.
 - Generation and repair use raw `Thread` instances. Keep the `Updating` guard and marshal UI work through the existing `InvokeRequired`/`BeginInvoke` pattern when changing background workflows.
-- Build probes can touch tracked `.vs`/`obj` cache files, while `bin` outputs are untracked. Review the worktree after builds and do not include cache/output churn in focused changes.
+- `.vs`, `bin`, and `obj` are ignored generated outputs. Do not force-add IDE caches or build artifacts.
