@@ -1,0 +1,123 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--Project was exported from assembly: C:\FEMapCreator\FEXNA_Library.dll-->
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{88988A3A-6094-4C41-9F52-BC20662C6D1F}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AssemblyName>FEXNA_Library</AssemblyName>
+    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <TargetFrameworkProfile>Client</TargetFrameworkProfile>
+    <ApplicationVersion>1.0.0.0</ApplicationVersion>
+    <FileAlignment>512</FileAlignment>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="_0002.cs" />
+    <Compile Include="_0003.cs" />
+    <Compile Include="_0005.cs" />
+    <Compile Include="_0008.cs" />
+    <Compile Include="RectangleExtension\Extension.cs" />
+    <Compile Include="Vector2Extension\Extension.cs" />
+    <Compile Include="ArrayExtension\Extension.cs" />
+    <Compile Include="DictionaryExtension\Extensions.cs" />
+    <Compile Include="FEXNA_Library\ActorReader.cs" />
+    <Compile Include="FEXNA_Library\Affinities.cs" />
+    <Compile Include="FEXNA_Library\AnimationReader.cs" />
+    <Compile Include="FEXNA_Library\AnimDataReader.cs" />
+    <Compile Include="FEXNA_Library\Attack_Types.cs" />
+    <Compile Include="FEXNA_Library\Battle_Animation_Data.cs" />
+    <Compile Include="FEXNA_Library\Battle_Animation_Tween_Data.cs" />
+    <Compile Include="FEXNA_Library\Battle_Animtion_Modifier.cs" />
+    <Compile Include="FEXNA_Library\Battle_Frame_Data.cs" />
+    <Compile Include="FEXNA_Library\Battle_Frame_Image_Data.cs" />
+    <Compile Include="FEXNA_Library\Boosts.cs" />
+    <Compile Include="FEXNA_Library\Buffs.cs" />
+    <Compile Include="FEXNA_Library\ChapterReader.cs" />
+    <Compile Include="FEXNA_Library\CharacterEventArgs.cs" />
+    <Compile Include="FEXNA_Library\CharEnteredHandler.cs" />
+    <Compile Include="FEXNA_Library\ClassReader.cs" />
+    <Compile Include="FEXNA_Library\ClassTypes.cs" />
+    <Compile Include="FEXNA_Library\Data_Actor.cs" />
+    <Compile Include="FEXNA_Library\Data_Chapter.cs" />
+    <Compile Include="FEXNA_Library\Data_Class.cs" />
+    <Compile Include="FEXNA_Library\Data_Equipment.cs" />
+    <Compile Include="FEXNA_Library\Data_Item.cs" />
+    <Compile Include="FEXNA_Library\Data_Map.cs" />
+    <Compile Include="FEXNA_Library\Data_Skill.cs" />
+    <Compile Include="FEXNA_Library\Data_Status.cs" />
+    <Compile Include="FEXNA_Library\Data_Support.cs" />
+    <Compile Include="FEXNA_Library\Data_Terrain.cs" />
+    <Compile Include="FEXNA_Library\Data_Tileset.cs" />
+    <Compile Include="FEXNA_Library\Data_Unit.cs" />
+    <Compile Include="FEXNA_Library\Data_Weapon.cs" />
+    <Compile Include="FEXNA_Library\Event_Action_Timings.cs" />
+    <Compile Include="FEXNA_Library\Event_Action_Triggers.cs" />
+    <Compile Include="FEXNA_Library\Event_Control.cs" />
+    <Compile Include="FEXNA_Library\Event_Data.cs" />
+    <Compile Include="FEXNA_Library\EventInput.cs" />
+    <Compile Include="FEXNA_Library\EventReader.cs" />
+    <Compile Include="FEXNA_Library\Frame_Data.cs" />
+    <Compile Include="FEXNA_Library\Frame_Tween_Functions.cs" />
+    <Compile Include="FEXNA_Library\Frame_Tween_Intervals.cs" />
+    <Compile Include="FEXNA_Library\Frame_Tween_Types.cs" />
+    <Compile Include="FEXNA_Library\IEquipmentService.cs" />
+    <Compile Include="FEXNA_Library\Item_Data.cs" />
+    <Compile Include="FEXNA_Library\Item_Data_Type.cs" />
+    <Compile Include="FEXNA_Library\ItemReader.cs" />
+    <Compile Include="FEXNA_Library\KeyEventArgs.cs" />
+    <Compile Include="FEXNA_Library\KeyEventHandler.cs" />
+    <Compile Include="FEXNA_Library\Map_Event_Data.cs" />
+    <Compile Include="FEXNA_Library\Map_Unit_Data.cs" />
+    <Compile Include="FEXNA_Library\MapReader.cs" />
+    <Compile Include="FEXNA_Library\MapRecolorReader.cs" />
+    <Compile Include="FEXNA_Library\MapSpriteRecolorData.cs" />
+    <Compile Include="FEXNA_Library\MovementTypes.cs" />
+    <Compile Include="FEXNA_Library\Placeables.cs" />
+    <Compile Include="FEXNA_Library\Preset_Chapter_Data.cs" />
+    <Compile Include="FEXNA_Library\SkillReader.cs" />
+    <Compile Include="FEXNA_Library\Sound_Data.cs" />
+    <Compile Include="FEXNA_Library\StatusReader.cs" />
+    <Compile Include="FEXNA_Library\Stave_Traits.cs" />
+    <Compile Include="FEXNA_Library\Support_Entry.cs" />
+    <Compile Include="FEXNA_Library\SupportReader.cs" />
+    <Compile Include="FEXNA_Library\TerrainReader.cs" />
+    <Compile Include="FEXNA_Library\TilesetReader.cs" />
+    <Compile Include="FEXNA_Library\Weapon_Ranks.cs" />
+    <Compile Include="FEXNA_Library\Weapon_Traits.cs" />
+    <Compile Include="FEXNA_Library\Weapon_Types.cs" />
+    <Compile Include="FEXNA_Library\WeaponReader.cs" />
+    <Compile Include="FEXNA_Library\Content_Readers\UnitReader.cs" />
+    <Compile Include="HashSetExtension\Extension.cs" />
+    <Compile Include="IntExtension\Extension.cs" />
+    <Compile Include="ListExtension\Extension.cs" />
+    <Compile Include="AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="  ​          " />
+    <EmbeddedResource Include="Microsoft\Xna\Framework.RuntimeProfile" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

@@ -1,0 +1,18 @@
+﻿using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Security.Permissions;
+
+[assembly: Extension]
+[assembly: AssemblyFileVersion("1.0.3.0")]
+[assembly: AssemblyTitle("FE Map Creator")]
+[assembly: AssemblyDescription("")]
+[assembly: Guid("e39d5b29-a039-4d7d-aab1-b7d97d6f734a")]
+[assembly: AssemblyConfiguration("")]
+[assembly: AssemblyCompany("www.bwdyeti.com")]
+[assembly: ComVisible(false)]
+[assembly: AssemblyProduct("FE_Map_Creator")]
+[assembly: AssemblyTrademark("")]
+[assembly: AssemblyCopyright("Copyright © bwdyeti.com 2014")]
+[assembly: AssemblyVersion("1.0.3.0")]
+[assembly: SecurityPermission(SecurityAction.RequestMinimum, SkipVerification = true)]
