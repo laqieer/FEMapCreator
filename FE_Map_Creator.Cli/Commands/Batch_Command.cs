@@ -13,7 +13,7 @@ internal static class Batch_Command
   {
     Option<string> manifest_option = new Option<string>("--manifest", "-m")
     {
-      Description = "Path to a JSON manifest containing a top-level \"jobs\" array of generate/repair job specs.",
+      Description = "Path to a JSON manifest containing generate/repair job specs. MAR repair jobs must include positive width/height and a tileset.",
       Required = true,
     };
     Option<bool> fail_fast_option = Common_Options.fail_fast();

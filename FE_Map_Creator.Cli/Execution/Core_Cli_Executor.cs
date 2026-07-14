@@ -29,7 +29,7 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       return await run_generate_count_batch(request, output, cancellation_token).ConfigureAwait(false);
 
     (Map_Job_Spec spec, string spec_directory) = load_optional_spec(request.Spec, "generate");
-    return await run_generate_job(request, spec, spec_directory, cancellation_token).ConfigureAwait(false);
+    return await run_generate_job(request, spec, spec_directory, output, cancellation_token).ConfigureAwait(false);
   }
 
   public async Task<Cli_Execution_Result> repair_async(
@@ -41,7 +41,7 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       return await run_repair_directory_batch(request, output, cancellation_token).ConfigureAwait(false);
 
     (Map_Job_Spec spec, string spec_directory) = load_optional_spec(request.Spec, "repair");
-    return await run_repair_job(request, spec, spec_directory, cancellation_token).ConfigureAwait(false);
+    return await run_repair_job(request, spec, spec_directory, output, cancellation_token).ConfigureAwait(false);
   }
 
   public async Task<Cli_Execution_Result> batch_async(
@@ -52,6 +52,11 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     string manifest_path = resolve_optional_full_path(request.Manifest);
     Map_Job_Manifest manifest = new Map_Job_Spec_Reader().read_manifest(manifest_path);
     string manifest_directory = Path.GetDirectoryName(manifest_path);
+    foreach (Map_Job_Spec job in manifest.Jobs)
+    {
+      if (string.Equals(job.Operation, "repair", StringComparison.OrdinalIgnoreCase))
+        Repair_Input_Preflight.validate_manifest_mar_job(job, manifest_directory);
+    }
 
     Batch_Progress progress = new Batch_Progress(manifest.Jobs.Length);
     for (int index = 0; index < manifest.Jobs.Length; ++index)
@@ -61,7 +66,7 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       string label = $"[{job_number}/{manifest.Jobs.Length}] {job.Operation ?? "(missing operation)"}";
 
       Batch_Job_Runner.Outcome outcome = await Batch_Job_Runner.run(
-        () => dispatch_manifest_job(job, job_number, manifest_directory, cancellation_token),
+        () => dispatch_manifest_job(job, job_number, manifest_directory, output, cancellation_token),
         label, output, progress, cancellation_token).ConfigureAwait(false);
 
       if (outcome.Cancelled)
@@ -102,6 +107,7 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     Generate_Request request,
     Map_Job_Spec spec,
     string spec_directory,
+    Cli_Output output,
     CancellationToken cancellation_token)
   {
     Map_Codec_Registry registry = new Map_Codec_Registry();
@@ -148,8 +154,14 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       Depth = request.Depth ?? spec?.Depth ?? 1,
       Seed = request.Seed ?? spec?.Seed,
     };
+    Cli_Map_Progress progress = new Cli_Map_Progress(
+      output.Error,
+      "Generate",
+      output_path,
+      checked(width.Value * height.Value));
     Map_Generation_Result result = await Task.Run(
-      () => engine.generate(state, options, cancellation_token), cancellation_token).ConfigureAwait(false);
+      () => engine.generate(state, options, cancellation_token, null, progress), cancellation_token).ConfigureAwait(false);
+    progress.complete();
 
     (Map_Document document, Map_Write_Options write_options) = Output_Document_Builder.build(state.Tiles, output_format, resolved.Asset);
     return Incomplete_Result_Writer.write(
@@ -164,24 +176,21 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     Repair_Request request,
     Map_Job_Spec spec,
     string spec_directory,
+    Cli_Output output,
     CancellationToken cancellation_token)
   {
-    string input_path = Job_Merge.resolve_path(request.Input, spec?.Input, spec_directory);
-    if (string.IsNullOrWhiteSpace(input_path))
-      throw new InvalidOperationException("--input is required (directly or via --spec).");
-
     Map_Codec_Registry registry = new Map_Codec_Registry();
-    Map_Format input_format = registry.format_from_path(input_path);
-    string selector_override = Job_Merge.merge_string(request.Tileset, spec?.Tileset);
-    int? width_override = request.Width ?? spec?.Width;
-    int? height_override = request.Height ?? spec?.Height;
+    Repair_Input_Metadata input = Repair_Input_Preflight.resolve(request, spec, spec_directory, registry);
+    string selector_override = input.Tileset;
+    int? width_override = input.Width;
+    int? height_override = input.Height;
     Map_Read_Options read_options = new Map_Read_Options
     {
       Width = width_override,
       Height = height_override,
       Tileset = selector_override,
     };
-    Map_Document document = registry.read(input_path, read_options, input_format);
+    Map_Document document = registry.read(input.Input_Path, read_options, input.Input_Format);
 
     if (width_override.HasValue && width_override.Value != document.Width)
       throw new InvalidOperationException($"--width {width_override.Value} does not match the input map's actual width {document.Width}.");
@@ -192,7 +201,7 @@ internal sealed class Core_Cli_Executor : ICli_Executor
 
     Map_State state = Map_State_Builder.build_for_repair(document.Tiles, spec, document.Width, document.Height);
 
-    string output_path = request.In_Place ? input_path : Job_Merge.resolve_path(request.Output, spec?.Output, spec_directory);
+    string output_path = request.In_Place ? input.Input_Path : Job_Merge.resolve_path(request.Output, spec?.Output, spec_directory);
     if (string.IsNullOrWhiteSpace(output_path))
       throw new InvalidOperationException("--output is required unless --in-place or --spec supplies an output.");
     Map_Format output_format = Output_Format_Resolver.resolve(null, spec?.Format, output_path, registry);
@@ -214,8 +223,14 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       Depth = request.Depth ?? spec?.Depth ?? 1,
       Seed = request.Seed ?? spec?.Seed,
     };
+    Cli_Map_Progress progress = new Cli_Map_Progress(
+      output.Error,
+      "Repair",
+      input.Input_Path,
+      checked(document.Width * document.Height));
     Map_Generation_Result result = await Task.Run(
-      () => engine.repair(state, options, cancellation_token), cancellation_token).ConfigureAwait(false);
+      () => engine.repair(state, options, cancellation_token, null, progress), cancellation_token).ConfigureAwait(false);
+    progress.complete();
 
     (Map_Document output_document, Map_Write_Options write_options) = Output_Document_Builder.build(state.Tiles, output_format, resolved.Asset);
     return Incomplete_Result_Writer.write(
@@ -294,7 +309,7 @@ internal sealed class Core_Cli_Executor : ICli_Executor
 
       string label = $"[{job_index}/{count}] {Path.GetFileName(full_output_path)}";
       Batch_Job_Runner.Outcome outcome = await Batch_Job_Runner.run(
-        () => run_generate_job(job_request, spec, spec_directory, cancellation_token),
+        () => run_generate_job(job_request, spec, spec_directory, output, cancellation_token),
         label, output, progress, cancellation_token).ConfigureAwait(false);
 
       if (outcome.Cancelled)
@@ -326,7 +341,6 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     string output_dir = Job_Merge.resolve_path(request.Output_Dir, null, null);
     if (string.IsNullOrWhiteSpace(output_dir))
       throw new InvalidOperationException("--output-dir is required when --input-dir is used.");
-    Directory.CreateDirectory(output_dir);
 
     string output_dir_prefix = with_trailing_separator(output_dir);
     string pattern = string.IsNullOrWhiteSpace(request.Pattern) ? "*.map" : request.Pattern;
@@ -341,13 +355,14 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     if (input_files.Length == 0)
       throw new InvalidOperationException($"No files matching pattern \"{pattern}\" were found under \"{input_dir}\".");
 
-    Batch_Progress progress = new Batch_Progress(input_files.Length);
+    var planned_jobs = new List<(string relative_path, Repair_Request job_request, Map_Job_Spec sidecar_spec, string sidecar_directory)>();
+    Map_Codec_Registry registry = new Map_Codec_Registry();
     for (int file_index = 0; file_index < input_files.Length; ++file_index)
     {
+      cancellation_token.ThrowIfCancellationRequested();
       string input_file = input_files[file_index];
       string relative_path = Path.GetRelativePath(input_dir, input_file);
       string output_file = Path.GetFullPath(Path.Combine(output_dir, relative_path));
-      Directory.CreateDirectory(Path.GetDirectoryName(output_file));
 
       (Map_Job_Spec sidecar_spec, string sidecar_directory) = Sidecar_Spec_Loader.load(input_file);
 
@@ -369,10 +384,18 @@ internal sealed class Core_Cli_Executor : ICli_Executor
         Allow_Incomplete = request.Allow_Incomplete,
         Require_Complete = request.Require_Complete,
       };
+      Repair_Input_Preflight.resolve(job_request, sidecar_spec, sidecar_directory, registry);
+      planned_jobs.Add((relative_path, job_request, sidecar_spec, sidecar_directory));
+    }
 
-      string label = $"[{file_index + 1}/{input_files.Length}] {relative_path}";
+    Directory.CreateDirectory(output_dir);
+    Batch_Progress progress = new Batch_Progress(planned_jobs.Count);
+    for (int job_index = 0; job_index < planned_jobs.Count; ++job_index)
+    {
+      var job = planned_jobs[job_index];
+      string label = $"[{job_index + 1}/{planned_jobs.Count}] {job.relative_path}";
       Batch_Job_Runner.Outcome outcome = await Batch_Job_Runner.run(
-        () => run_repair_job(job_request, sidecar_spec, sidecar_directory, cancellation_token),
+        () => run_repair_job(job.job_request, job.sidecar_spec, job.sidecar_directory, output, cancellation_token),
         label, output, progress, cancellation_token).ConfigureAwait(false);
 
       if (outcome.Cancelled)
@@ -394,12 +417,13 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     Map_Job_Spec job,
     int job_number,
     string manifest_directory,
+    Cli_Output output,
     CancellationToken cancellation_token)
   {
     if (string.Equals(job.Operation, "generate", StringComparison.OrdinalIgnoreCase))
-      return run_generate_job(new Generate_Request(), job, manifest_directory, cancellation_token);
+      return run_generate_job(new Generate_Request(), job, manifest_directory, output, cancellation_token);
     if (string.Equals(job.Operation, "repair", StringComparison.OrdinalIgnoreCase))
-      return run_repair_job(new Repair_Request(), job, manifest_directory, cancellation_token);
+      return run_repair_job(new Repair_Request(), job, manifest_directory, output, cancellation_token);
     if (string.Equals(job.Operation, "batch", StringComparison.OrdinalIgnoreCase))
     {
       return Task.FromResult(Cli_Execution_Result.failure(

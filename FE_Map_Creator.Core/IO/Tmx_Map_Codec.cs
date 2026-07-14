@@ -11,6 +11,8 @@ namespace FE_Map_Creator;
 
 public sealed class Tmx_Map_Codec : IMap_Codec
 {
+  private const uint TRANSFORM_FLAGS = 0xF0000000U;
+
   public Map_Format Format => Map_Format.Tmx;
 
   public Map_Document read(string filename, Map_Read_Options options = null)
@@ -152,7 +154,14 @@ public sealed class Tmx_Map_Codec : IMap_Codec
       {
         continue;
       }
-      uint gid = gids[index];
+      uint raw_gid = gids[index];
+      uint transform_flags = raw_gid & TRANSFORM_FLAGS;
+      if (transform_flags != 0)
+      {
+        throw new InvalidDataException(
+          $"TMX tile {index} gid {raw_gid} uses unsupported transform flags 0x{transform_flags:X8}.");
+      }
+      uint gid = raw_gid & ~TRANSFORM_FLAGS;
       if (gid == 0 || gid < first_gid)
         continue;
       uint tile = gid - (uint) first_gid;

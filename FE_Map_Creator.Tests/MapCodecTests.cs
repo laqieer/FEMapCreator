@@ -389,6 +389,37 @@ public sealed class MapCodecTests
   }
 
   [TestMethod]
+  [DataRow(null, "<tile gid=\"2147483656\"/>")]
+  [DataRow("csv", "2147483656")]
+  [DataRow("base64", "CAAAgA==")]
+  public void TmxReaderRejectsUnsupportedTransformFlags(string encoding, string data)
+  {
+    string directory = create_temp_directory();
+    try
+    {
+      string filename = Path.Combine(directory, "transformed.tmx");
+      string encoding_attribute = encoding == null ? "" : $" encoding=\"{encoding}\"";
+      File.WriteAllText(filename,
+        $"""
+        <map orientation="orthogonal" width="1" height="1">
+          <tileset firstgid="7" name="test"><image source="test.png"/></tileset>
+          <layer width="1" height="1"><data{encoding_attribute}>{data}</data></layer>
+        </map>
+        """);
+
+      InvalidDataException exception =
+        Assert.Throws<InvalidDataException>(() => new Tmx_Map_Codec().read(filename));
+
+      StringAssert.Contains(exception.Message, "unsupported transform flags");
+      StringAssert.Contains(exception.Message, "0x80000000");
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [TestMethod]
   public void TmxReaderRejectsNonOrthogonalOrientation()
   {
     string directory = create_temp_directory();

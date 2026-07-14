@@ -210,7 +210,11 @@ public sealed class Map_Generation_Engine
           // No valid tile exists for any remaining fillable cell (e.g. an impossible
           // terrain constraint, or an empty tileset config). Never silently report
           // completion: mark every remaining fillable cell as an unresolved hole.
-          unresolved += mark_unfillable_cells_as_unresolved(state, tile_drawn);
+          int unresolved_cells = mark_unfillable_cells_as_unresolved(state, tile_drawn);
+          unresolved += unresolved_cells;
+          drawn_count += unresolved_cells;
+          if (unresolved_cells > 0)
+            progress?.Report(drawn_count);
           break;
         }
 
@@ -218,6 +222,8 @@ public sealed class Map_Generation_Engine
         lookahead_scratch.sync_cell(state, seed_cell.Value.X, seed_cell.Value.Y);
         if (is_open_tile(state, seed_cell.Value.X, seed_cell.Value.Y))
           open_tiles.add(seed_cell.Value.X + seed_cell.Value.Y * state.Width, tile_priorities[seed_cell.Value.X, seed_cell.Value.Y]);
+        ++drawn_count;
+        progress?.Report(drawn_count);
         continue;
       }
 

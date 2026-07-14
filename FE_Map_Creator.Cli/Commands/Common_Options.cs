@@ -10,7 +10,7 @@ internal static class Common_Options
   {
     return new Option<string>("--tileset", "-t")
     {
-      Description = "Tileset selector: exact bundled name, short identifier, or explicit override paths.",
+      Description = "Tileset selector: exact bundled name, short identifier, or explicit override paths. Required for MAR input because MAR stores no tileset identifier.",
     };
   }
 
@@ -86,7 +86,7 @@ internal static class Common_Options
   {
     return new Option<string>("--spec")
     {
-      Description = "Path to a versioned JSON job spec. Direct command options override values loaded from it.",
+      Description = "Path to a versioned JSON job spec. Direct command options override it; repair specs may supply required MAR width, height, and tileset metadata.",
     };
   }
 
@@ -94,7 +94,7 @@ internal static class Common_Options
   {
     return new Option<int?>("--width")
     {
-      Description = "Map width in tiles. Must be positive.",
+      Description = "Map width in tiles. Must be positive and is required when reading MAR input.",
     };
   }
 
@@ -102,7 +102,7 @@ internal static class Common_Options
   {
     return new Option<int?>("--height")
     {
-      Description = "Map height in tiles. Must be positive.",
+      Description = "Map height in tiles. Must be positive and is required when reading MAR input.",
     };
   }
 

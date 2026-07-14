@@ -13,7 +13,7 @@ internal static class Repair_Command
   {
     Option<string> input_option = new Option<string>("--input", "-i")
     {
-      Description = "Input map file to repair.",
+      Description = "Input map file to repair. MAR files require width, height, and tileset metadata from options or JSON.",
     };
     Option<string> output_option = new Option<string>("--output", "-o")
     {
@@ -43,7 +43,7 @@ internal static class Repair_Command
     Option<bool> require_complete_option = Common_Options.require_complete();
     Option<string> input_dir_option = new Option<string>("--input-dir")
     {
-      Description = "Source directory for homogeneous directory repair instead of a single --input file.",
+      Description = "Source directory for homogeneous repair. MAR files may use per-file .mapgen.json sidecars for width, height, and tileset.",
     };
     Option<string> output_dir_option = new Option<string>("--output-dir")
     {
@@ -61,7 +61,9 @@ internal static class Repair_Command
     };
     Option<bool> fail_fast_option = Common_Options.fail_fast();
 
-    Command command = new Command("repair", "Repair an existing map.")
+    Command command = new Command(
+      "repair",
+      "Repair an existing map. MAR files do not contain dimensions or a tileset identifier; supply them with options, JSON spec/manifest fields, or a .mapgen.json sidecar.")
     {
       input_option,
       output_option,

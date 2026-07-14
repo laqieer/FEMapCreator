@@ -53,6 +53,8 @@ public sealed class CliBatchIntegrationTests
     Cli_Test_Helpers.assert_success(second);
     Cli_Test_Helpers.assert_success(custom_template);
     Cli_Test_Helpers.assert_success(explicit_mar);
+    StringAssert.Contains(first.Standard_Error, "Generate progress:");
+    Assert.IsFalse(first.Standard_Output.Contains("progress:", StringComparison.OrdinalIgnoreCase), first.describe());
 
     CollectionAssert.AreEqual(
       new[] { "map-1.map", "map-2.map", "map-3.map" },
@@ -199,6 +201,8 @@ public sealed class CliBatchIntegrationTests
 
     Cli_Test_Helpers.assert_success(first);
     Cli_Test_Helpers.assert_success(rerun);
+    StringAssert.Contains(first.Standard_Error, "Repair progress:");
+    Assert.IsFalse(first.Standard_Output.Contains("progress:", StringComparison.OrdinalIgnoreCase), first.describe());
     StringAssert.Contains(first.Standard_Output, "Repair: 3 succeeded, 0 incomplete, 0 failed of 3 job(s).");
     StringAssert.Contains(rerun.Standard_Output, "Repair: 3 succeeded, 0 incomplete, 0 failed of 3 job(s).");
 
@@ -253,8 +257,10 @@ public sealed class CliBatchIntegrationTests
     string original = directory.path("original.map");
     string template = directory.path("template.map");
     string hole = directory.path("hole.map");
+    string mar = directory.path("input.mar");
     string manifest = directory.path("manifest.json");
     await generate_fixture_async(original, "map");
+    await generate_fixture_async(mar, "mar");
     Cli_Test_Helpers.create_hole_map(original, template, 2, 0);
     Cli_Test_Helpers.create_hole_map(original, hole, 2, 0);
 
@@ -287,6 +293,17 @@ public sealed class CliBatchIntegrationTests
           Input = "hole.map",
           Output = Path.Combine("repaired", "out.map"),
           Seed = 12345
+        },
+        new Map_Job_Spec()
+        {
+          Version = 1,
+          Operation = "repair",
+          Input = "input.mar",
+          Output = Path.Combine("repaired", "out.mar"),
+          Width = 4,
+          Height = 1,
+          Tileset = "01020304",
+          Seed = 12345
         }
       }
     };
@@ -297,9 +314,74 @@ public sealed class CliBatchIntegrationTests
       "--manifest", manifest);
 
     Cli_Test_Helpers.assert_success(result);
-    StringAssert.Contains(result.Standard_Output, "Batch: 2 succeeded, 0 incomplete, 0 failed of 2 job(s).");
+    StringAssert.Contains(result.Standard_Output, "Batch: 3 succeeded, 0 incomplete, 0 failed of 3 job(s).");
+    StringAssert.Contains(result.Standard_Error, "Generate progress:");
+    StringAssert.Contains(result.Standard_Error, "Repair progress:");
+    Assert.IsFalse(result.Standard_Output.Contains("progress:", StringComparison.OrdinalIgnoreCase), result.describe());
     CollectionAssert.AreEqual(File.ReadAllBytes(original), File.ReadAllBytes(directory.path("generated", "out.map")));
     CollectionAssert.AreEqual(File.ReadAllBytes(original), File.ReadAllBytes(directory.path("repaired", "out.map")));
+    CollectionAssert.AreEqual(File.ReadAllBytes(mar), File.ReadAllBytes(directory.path("repaired", "out.mar")));
+  }
+
+  [TestMethod]
+  public async Task MarBatchPreflightPreventsDirectoryAndManifestPartialOutputs()
+  {
+    using Cli_Temporary_Directory directory = new Cli_Temporary_Directory();
+    string expected_map = directory.path("expected.map");
+    string mar = directory.path("missing-metadata.mar");
+    await generate_fixture_async(expected_map, "map");
+    await generate_fixture_async(mar, "mar");
+
+    string input_dir = directory.path("input");
+    Directory.CreateDirectory(input_dir);
+    Cli_Test_Helpers.create_hole_map(expected_map, directory.path("input", "01-good.map"), 2, 0);
+    File.Copy(mar, directory.path("input", "02-bad.mar"));
+    string output_dir = directory.path("directory-output");
+
+    Cli_Process_Result directory_result = await Cli_Test_Helpers.run_cli_async(
+      "repair",
+      "--input-dir", input_dir,
+      "--output-dir", output_dir,
+      "--pattern", "*.*",
+      "--seed", "12345");
+
+    Cli_Test_Helpers.assert_error(directory_result, "requires positive width, positive height, and a tileset identifier");
+    Assert.IsFalse(Directory.Exists(output_dir), directory_result.describe());
+
+    string manifest = directory.path("manifest.json");
+    string generated_output = directory.path("manifest-output", "generated.map");
+    new Map_Job_Spec_Reader().write_manifest(manifest, new Map_Job_Manifest()
+    {
+      Version = 1,
+      Jobs = new[]
+      {
+        new Map_Job_Spec()
+        {
+          Version = 1,
+          Operation = "generate",
+          Width = 2,
+          Height = 1,
+          Tileset = "01020304",
+          Output = Path.Combine("manifest-output", "generated.map"),
+          Seed = 1
+        },
+        new Map_Job_Spec()
+        {
+          Version = 1,
+          Operation = "repair",
+          Input = "missing-metadata.mar",
+          Output = Path.Combine("manifest-output", "repaired.mar")
+        }
+      }
+    });
+
+    Cli_Process_Result manifest_result = await Cli_Test_Helpers.run_cli_async(
+      "batch",
+      "--manifest", manifest);
+
+    Cli_Test_Helpers.assert_error(manifest_result, "requires positive width, positive height, and a tileset identifier");
+    StringAssert.Contains(manifest_result.All_Output, "batch manifest job");
+    Assert.IsFalse(File.Exists(generated_output), manifest_result.describe());
   }
 
   [TestMethod]

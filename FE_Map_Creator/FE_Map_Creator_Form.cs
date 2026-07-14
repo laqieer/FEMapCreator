@@ -584,7 +584,8 @@ public class FE_Map_Creator_Form : Form
     this.load_tileset_image();
     this.Open_Tiles = new HashSet<int>();
     this.draw_random_tile();
-    this.generate_map(this.Zoom);
+    CancellationToken cancellation_token = this.start_map_operation("Generating map...");
+    this.generate_map(this.Zoom, cancellation_token);
     this.refresh_panel_size();
     this.MapPicture.Invalidate();
   }
@@ -720,9 +721,7 @@ public class FE_Map_Creator_Form : Form
                 }
               }
             }
-            Dictionary<short, short> dictionary;
-            short key;
-            (dictionary = this.tileset_config_data[(int) identicalTile].Valid_Tile_Priority[index3])[key = num] = (short) ((int) dictionary[key] + 1);
+            this.tileset_config_data[(int) identicalTile].increment_valid_tile_priority(index3, num);
           }
         }
         this.progressBar1.Value = this.progressBar1.Maximum * (index1 * map.Length + index2 + 1) / (maps.Count * map.Length);
@@ -1006,7 +1005,7 @@ public class FE_Map_Creator_Form : Form
     }
   }
 
-  protected void generate_map(int zoom, CancellationToken cancellation_token = default)
+  protected void generate_map(int zoom, CancellationToken cancellation_token)
   {
     Map_Generation_Result result = null;
     Exception operation_error = null;
@@ -2681,7 +2680,7 @@ label_27:
       for (int x = 0; x < this.Map_Width; ++x)
       {
         bool repair_candidate = this.Map_Tiles[x, y] == 0;
-        if (!repair_candidate && this.Terrain_Types[x, y] != 0 && this.tileset_data != null && this.tileset_data.Terrain_Tags.Count > this.Map_Tiles[x, y])
+        if (!repair_candidate && !this.Locked_Tiles[x, y] && this.Terrain_Types[x, y] != 0 && this.tileset_data != null && this.tileset_data.Terrain_Tags.Count > this.Map_Tiles[x, y])
           repair_candidate = this.Terrain_Types[x, y] > 0 ? this.tileset_data.Terrain_Tags[this.Map_Tiles[x, y]] != this.Terrain_Types[x, y] : this.tileset_data.Terrain_Tags[this.Map_Tiles[x, y]] == -this.Terrain_Types[x, y];
         if (repair_candidate)
           pointSet.Add(new Point(x, y));

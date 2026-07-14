@@ -63,7 +63,7 @@ internal static class Cli_Test_Helpers
   internal static void assert_success(Cli_Process_Result result)
   {
     Assert.AreEqual(0, result.Exit_Code, result.describe());
-    Assert.IsTrue(string.IsNullOrWhiteSpace(result.Standard_Error), result.describe());
+    assert_stderr_contains_only_progress(result);
   }
 
   internal static void assert_error(Cli_Process_Result result, string message)
@@ -113,6 +113,13 @@ internal static class Cli_Test_Helpers
     return Regex.Matches(output ?? "", @"seed (?<seed>-?\d+)")
       .Select(match => int.Parse(match.Groups["seed"].Value, System.Globalization.CultureInfo.InvariantCulture))
       .ToArray();
+  }
+
+  internal static void assert_stderr_contains_only_progress(Cli_Process_Result result)
+  {
+    string[] lines = (result.Standard_Error ?? "")
+      .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+    Assert.IsTrue(lines.All(line => line.Contains(" progress: ", StringComparison.Ordinal)), result.describe());
   }
 
   internal static string repository_asset_root() => repository_root();

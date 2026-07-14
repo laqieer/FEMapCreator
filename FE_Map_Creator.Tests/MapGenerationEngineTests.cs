@@ -24,6 +24,23 @@ public sealed class MapGenerationEngineTests
   }
 
   [TestMethod]
+  public void GenerateProgressCountsSeedAndEveryNewCell()
+  {
+    Map_State state = blank_state(2, 2);
+    Recording_Progress progress = new Recording_Progress();
+
+    new Map_Generation_Engine(create_uniform_data(1)).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Seed = 1234
+      },
+      progress: progress);
+
+    CollectionAssert.AreEqual(new int[] { 1, 2, 3, 4 }, progress.Values);
+  }
+
+  [TestMethod]
   public void GenerateWithSameSeedIsDeterministic()
   {
     Tileset_Generation_Data data = create_connected_data(1, 2);
@@ -282,19 +299,60 @@ public sealed class MapGenerationEngineTests
   }
 
   [TestMethod]
+  public void RepairUsesLockedZeroAsHoleOriginWithoutChangingIt()
+  {
+    Map_State state = new Map_State(
+      new int[2, 1]
+      {
+        { 0 },
+        { 1 }
+      },
+      filled_bool_array(2, 1, true),
+      new bool[2, 1]
+      {
+        { true },
+        { false }
+      },
+      new int[2, 1]);
+    int redrawn = 0;
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_uniform_data(1)).repair(
+      state,
+      new Map_Repair_Options()
+      {
+        Radius = 1,
+        Depth = 1,
+        Seed = 16
+      },
+      tile_drawn: (x, y, tile) => ++redrawn);
+
+    Assert.AreEqual(1, result.Unresolved_Tile_Count);
+    Assert.AreEqual(0, state.Tiles[0, 0]);
+    Assert.IsTrue(state.Drawn[0, 0]);
+    Assert.IsTrue(state.Locked[0, 0]);
+    Assert.AreEqual(0, state.Tiles[1, 0]);
+    Assert.IsTrue(state.Drawn[1, 0]);
+    Assert.IsFalse(state.Locked[1, 0]);
+    Assert.AreEqual(1, redrawn);
+  }
+
+  [TestMethod]
   public void GenerateWithEmptyConfigMarksEveryCellUnresolved()
   {
     Map_State state = blank_state(2, 2);
+    Recording_Progress progress = new Recording_Progress();
 
     Map_Generation_Result result = new Map_Generation_Engine(create_generation_data()).generate(
       state,
       new Map_Generation_Options()
       {
         Seed = 12
-      });
+      },
+      progress: progress);
 
     Assert.AreEqual(4, result.Unresolved_Tile_Count);
     assert_all_tiles(state, 0);
+    CollectionAssert.AreEqual(new int[] { 4 }, progress.Values);
   }
 
   [TestMethod]
@@ -554,6 +612,16 @@ public sealed class MapGenerationEngineTests
         Assert.IsTrue(state.Drawn[x, y], $"Cell ({x},{y}) was not drawn.");
         Assert.AreEqual(expected, state.Tiles[x, y], $"Unexpected tile at ({x},{y}).");
       }
+    }
+  }
+
+  private sealed class Recording_Progress : IProgress<int>
+  {
+    public List<int> Values { get; } = new List<int>();
+
+    public void Report(int value)
+    {
+      this.Values.Add(value);
     }
   }
 }

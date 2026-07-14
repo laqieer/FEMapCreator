@@ -17,6 +17,15 @@ public sealed class CliIntegrationTests
     StringAssert.Contains(help.Standard_Output, "repair");
     StringAssert.Contains(help.Standard_Output, "tilesets");
 
+    Cli_Process_Result repair_help = await run_cli_async("repair", "--help");
+    assert_success(repair_help);
+    StringAssert.Contains(repair_help.Standard_Output, "MAR");
+    StringAssert.Contains(repair_help.Standard_Output, "--width");
+    StringAssert.Contains(repair_help.Standard_Output, ".mapgen.json");
+    string packaged_readme = Path.Combine(Path.GetDirectoryName(cli_dll_path())!, "README.md");
+    Assert.IsTrue(File.Exists(packaged_readme), "The CLI output must include its README.");
+    StringAssert.Contains(File.ReadAllText(packaged_readme), "MAR files contain only tile values");
+
     Cli_Process_Result list = await run_cli_async("tilesets", "list");
 
     assert_success(list);
@@ -52,6 +61,8 @@ public sealed class CliIntegrationTests
     assert_success(second_result);
     StringAssert.Contains(first_result.Standard_Output, "seed 12345");
     StringAssert.Contains(second_result.Standard_Output, "seed 12345");
+    StringAssert.Contains(first_result.Standard_Error, "Generate progress:");
+    Assert.IsFalse(first_result.Standard_Output.Contains("progress:", StringComparison.OrdinalIgnoreCase), first_result.describe());
 
     string[] lines = File.ReadAllLines(first);
     CollectionAssert.AreEqual(new[] { "01020304", "3 4" }, lines.Take(2).ToArray());
@@ -61,6 +72,41 @@ public sealed class CliIntegrationTests
     Assert.AreEqual(4, document.Width);
     Assert.AreEqual(3, document.Height);
     Assert.AreEqual("01020304", document.Tileset);
+  }
+
+  [TestMethod]
+  public async Task ProgressReportsSeedOnlyGenerationAndNoOpRepairCompletion()
+  {
+    using Cli_Temporary_Directory directory = new Cli_Temporary_Directory();
+    string generated = directory.path("generated.map");
+    string complete = directory.path("complete.map");
+    string repaired = directory.path("repaired.map");
+
+    Cli_Process_Result generation = await run_cli_async(
+      "generate",
+      "--width", "1",
+      "--height", "1",
+      "--tileset", "01020304",
+      "--output", generated,
+      "--seed", "5");
+    File.WriteAllText(complete,
+      """
+      01020304
+      1 1
+      1
+      """);
+    Cli_Process_Result repair = await run_cli_async(
+      "repair",
+      "--input", complete,
+      "--output", repaired,
+      "--seed", "5");
+
+    assert_success(generation);
+    assert_success(repair);
+    StringAssert.Contains(generation.Standard_Error, "complete (1 cell(s) processed)");
+    StringAssert.Contains(repair.Standard_Error, "complete (0 cell(s) processed)");
+    Assert.IsFalse(generation.Standard_Output.Contains("progress:", StringComparison.OrdinalIgnoreCase), generation.describe());
+    Assert.IsFalse(repair.Standard_Output.Contains("progress:", StringComparison.OrdinalIgnoreCase), repair.describe());
   }
 
   [TestMethod]
@@ -106,6 +152,8 @@ public sealed class CliIntegrationTests
     assert_success(tmx_result);
     assert_success(mar_result);
     assert_success(repair_result);
+    StringAssert.Contains(repair_result.Standard_Error, "Repair progress:");
+    Assert.IsFalse(repair_result.Standard_Output.Contains("progress:", StringComparison.OrdinalIgnoreCase), repair_result.describe());
 
     Map_Document tmx_document = new Tmx_Map_Codec().read(tmx);
     Assert.AreEqual(4, tmx_document.Width);
@@ -127,6 +175,72 @@ public sealed class CliIntegrationTests
     Assert.AreEqual(1, mar_document.Height);
 
     CollectionAssert.AreEqual(File.ReadAllBytes(original), File.ReadAllBytes(repaired));
+  }
+
+  [TestMethod]
+  public async Task MarRepairSupportsOptionsAndSpecsAndPreflightsMissingMetadata()
+  {
+    using Cli_Temporary_Directory directory = new Cli_Temporary_Directory();
+    string input = directory.path("input.mar");
+    string direct_output = directory.path("direct.mar");
+    string spec_output = directory.path("spec.mar");
+    string valid_spec = directory.path("valid.json");
+    string missing_spec = directory.path("missing.json");
+    string protected_output = directory.path("protected.mar");
+
+    Cli_Process_Result generated = await run_cli_async(
+      "generate",
+      "--width", "4",
+      "--height", "1",
+      "--tileset", "01020304",
+      "--output", input,
+      "--seed", "12345");
+    assert_success(generated);
+
+    Cli_Process_Result direct = await run_cli_async(
+      "repair",
+      "--input", input,
+      "--output", direct_output,
+      "--width", "4",
+      "--height", "1",
+      "--tileset", "01020304",
+      "--seed", "12345");
+    assert_success(direct);
+    CollectionAssert.AreEqual(File.ReadAllBytes(input), File.ReadAllBytes(direct_output));
+
+    new Map_Job_Spec_Reader().write_job(valid_spec, new Map_Job_Spec()
+    {
+      Version = 1,
+      Operation = "repair",
+      Input = "input.mar",
+      Output = "spec.mar",
+      Width = 4,
+      Height = 1,
+      Tileset = "01020304",
+      Seed = 12345
+    });
+    Cli_Process_Result from_spec = await run_cli_async("repair", "--spec", valid_spec);
+    assert_success(from_spec);
+    CollectionAssert.AreEqual(File.ReadAllBytes(input), File.ReadAllBytes(spec_output));
+
+    File.WriteAllText(protected_output, "unchanged");
+    new Map_Job_Spec_Reader().write_job(missing_spec, new Map_Job_Spec()
+    {
+      Version = 1,
+      Operation = "repair",
+      Input = "input.mar",
+      Output = "protected.mar"
+    });
+    Cli_Process_Result missing = await run_cli_async(
+      "repair",
+      "--spec", missing_spec,
+      "--force");
+
+    assert_error(missing, "requires positive width, positive height, and a tileset identifier");
+    StringAssert.Contains(missing.All_Output, "never inferred");
+    StringAssert.Contains(missing.All_Output, "--width");
+    StringAssert.Contains(missing.All_Output, ".mapgen.json");
+    Assert.AreEqual("unchanged", File.ReadAllText(protected_output));
   }
 
   [TestMethod]
@@ -377,7 +491,7 @@ public sealed class CliIntegrationTests
     assert_error(invalid_depth, "--depth must be 1 or 2.");
     assert_error(invalid_radius, "--repair-radius must be zero or greater.");
     assert_error(conflicting_flags, "--allow-incomplete and --require-complete cannot both be specified.");
-    assert_error(missing_mar_metadata, "MAR input requires positive width and height metadata.");
+    assert_error(missing_mar_metadata, "requires positive width, positive height, and a tileset identifier");
     assert_error(unsupported_zstd_tmx, "encoding \"base64\" with compression \"zstd\" is not supported.");
   }
 
@@ -446,7 +560,9 @@ public sealed class CliIntegrationTests
   private static void assert_success(Cli_Process_Result result)
   {
     Assert.AreEqual(0, result.Exit_Code, result.describe());
-    Assert.IsTrue(string.IsNullOrWhiteSpace(result.Standard_Error), result.describe());
+    string[] lines = result.Standard_Error
+      .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+    Assert.IsTrue(lines.All(line => line.Contains(" progress: ", StringComparison.Ordinal)), result.describe());
   }
 
   private static void assert_error(Cli_Process_Result result, string message)

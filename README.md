@@ -39,11 +39,11 @@ dotnet run --project .\FE_Map_Creator.Cli\FE_Map_Creator.Cli.csproj -c Release -
 dotnet publish .\FE_Map_Creator.Cli\FE_Map_Creator.Cli.csproj -c Release
 ```
 
-Publishing copies `Tileset_Data.xml`, `Terrain_Data.xml`, `Tilesets\**`, and `Tileset Generation Data\**` into `FE_Map_Creator.Cli\bin\Release\net10.0\publish\` alongside `FE_Map_Creator.Cli.exe`/`FE_Map_Creator.Cli.dll`, so the published folder is self-contained for every bundled tileset. By default the CLI resolves these bundled assets from its own install directory (`AppContext.BaseDirectory`); use `--assets-dir` to point at a different asset root instead.
+Publishing copies this `README.md`, `Tileset_Data.xml`, `Terrain_Data.xml`, `Tilesets\**`, and `Tileset Generation Data\**` into `FE_Map_Creator.Cli\bin\Release\net10.0\publish\` alongside `FE_Map_Creator.Cli.exe`/`FE_Map_Creator.Cli.dll`, so the published folder is self-contained for every bundled tileset. By default the CLI resolves these bundled assets from its own install directory (`AppContext.BaseDirectory`); use `--assets-dir` to point at a different asset root instead.
 
 ### CLI commands and examples
 
-Every `generate`/`repair` run prints its random seed even when `--seed` is omitted, so any run can be reproduced later with `--seed <printed seed>`.
+Every `generate`/`repair` run prints its random seed even when `--seed` is omitted, so any run can be reproduced later with `--seed <printed seed>`. Per-map generation/repair progress is written to stderr; result paths, seeds, and summaries remain on stdout.
 
 List bundled tilesets (selector names, asset paths, and any missing-pairing diagnostics):
 
@@ -86,6 +86,12 @@ FE_Map_Creator.Cli.exe repair --input map.map --tileset "FE6 - Fields - 01020304
 
 `--in-place` and `--output` are mutually exclusive; `--in-place` replaces `--input` atomically (write to a temp file, then move over the original).
 
+MAR files contain only tile values, not dimensions or a tileset identifier. Supply all three values explicitly when repairing a MAR file:
+
+```powershell
+FE_Map_Creator.Cli.exe repair --input map.mar --width 30 --height 20 --tileset "FE6 - Fields - 01020304" --output map.repaired.mar
+```
+
 Generate `--count` homogeneous maps into a directory (each job gets a deterministic derived seed when `--seed` is supplied; `{index}`/`{seed}` are available in `--name-template`):
 
 ```powershell
@@ -99,6 +105,18 @@ FE_Map_Creator.Cli.exe repair --input-dir .\maps --output-dir .\repaired --tiles
 ```
 
 Each input file under `--input-dir` may have an optional sidecar spec, either `<basename>.mapgen.json` or `<filename>.mapgen.json` (e.g. `map-1.mapgen.json` or `map-1.map.mapgen.json` for `map-1.map`); the basename form wins if both exist, and sidecars are excluded from `--pattern` matching.
+
+For `maps\chapter-1.mar`, a `maps\chapter-1.mapgen.json` sidecar can supply the metadata absent from MAR:
+
+```json
+{
+  "version": 1,
+  "operation": "repair",
+  "width": 30,
+  "height": 20,
+  "tileset": "FE6 - Fields - 01020304"
+}
+```
 
 Run a heterogeneous batch of generate/repair jobs from one manifest:
 
@@ -142,6 +160,20 @@ FE_Map_Creator.Cli.exe batch --manifest manifest.json --fail-fast
 
 Here `template.map`'s border tiles are fixed by `locked` (also implicitly `drawn`, since with a template and no explicit spec `drawn` matrix, `drawn` defaults to the `locked` mask), the top-left interior block requires terrain tag `3`, the bottom-right interior block forbids terrain tag `5`, and every other interior cell is left open for the generation engine to fill.
 
+A single-job MAR repair spec supplies the same non-inferable metadata:
+
+```json
+{
+  "version": 1,
+  "operation": "repair",
+  "input": "map.mar",
+  "output": "map.repaired.mar",
+  "width": 30,
+  "height": 20,
+  "tileset": "FE6 - Fields - 01020304"
+}
+```
+
 Constraint matrices (`drawn`, `locked`, `terrain`) are `[row][column]` (JSON array-of-rows), matching how the fields read naturally as `height` rows of `width` values each; every row must be the same length, and all three matrices (when present) must share the same width/height as each other and as any `width`/`height` fields. Internally the Core engine (and the GUI) instead stores maps as `[x, y]` arrays, so the spec reader transposes on load.
 
 - `drawn` vs. tile index `0`: a cell can hold tile `0` and still be "drawn" (explicitly placed) rather than open. For `generate`, `drawn` only matters with `--template`: an explicit spec `drawn` matrix wins, otherwise it defaults to the `locked` mask; without a template every cell starts open regardless of `drawn`. `repair` always treats every input cell as drawn, with tile `0` cells taken as repair holes to reopen.
@@ -168,8 +200,10 @@ Constraint matrices (`drawn`, `locked`, `terrain`) are `[row][column]` (JSON arr
     {
       "version": 1,
       "operation": "repair",
-      "input": "maps/field-2.map",
-      "output": "maps/field-2.repaired.map",
+      "input": "maps/field-2.mar",
+      "output": "maps/field-2.repaired.mar",
+      "width": 30,
+      "height": 20,
       "tileset": "FE6 - Fields - 01020304"
     }
   ]
@@ -179,8 +213,8 @@ Constraint matrices (`drawn`, `locked`, `terrain`) are `[row][column]` (JSON arr
 ### Sidecar and format notes
 
 - `--assets-dir`, `--tileset-image`, and `--generation-data` override where bundled tileset assets are read from (an explicit tileset selector is still required to pick a bundled `Tileset_Data.xml` entry and to name the output, unless both a PNG and a `.dat` override are supplied).
-- MAR input requires positive width/height and a tileset identifier (from `--tileset`/spec/sidecar); generated MAR output already gets dimensions from the generation request. MAR encodes each non-negative tile as `tileIndex * 32` in a signed 16-bit little-endian grid, so tile indices must be between `0` and `1023`.
-- TMX output only ever writes explicit `<tile gid="...">` elements (no CSV or base64 layer encoding); TMX input is rejected if its `<data>` element has an `encoding`/`compression` attribute, since only explicit-tile TMX is supported for both reading and writing.
+- MAR input requires positive width/height and a tileset identifier from `--width`/`--height`/`--tileset`, a JSON job spec or manifest entry, or a directory-repair sidecar. Every MAR job is preflighted before its output is changed; directory and manifest modes preflight all MAR jobs before writing any batch output. These values are never inferred because the MAR format does not store them. Generated MAR output already gets dimensions from the generation request. MAR encodes each non-negative tile as `tileIndex * 32` in a signed 16-bit little-endian grid, so tile indices must be between `0` and `1023`.
+- TMX input supports explicit `<tile gid="...">` elements, CSV, and uncompressed, gzip-compressed, or zlib-compressed base64 layer data. zstd and other encodings/compressions are rejected with an actionable error. TMX output continues to write explicit tile elements.
 
 ### Safe output, incomplete results, and exit codes
 
