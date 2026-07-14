@@ -172,6 +172,47 @@ public sealed class MapGenerationEngineTests
   }
 
   [TestMethod]
+  public void GenerateDisconnectedRegionsPreservesSeededSelectionOrder()
+  {
+    Map_State state = isolated_checkerboard_state(5, 5);
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_connected_data(1, 2)).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Seed = 42
+      });
+
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    CollectionAssert.AreEqual(
+      new int[]
+      {
+        2, 1, 1, 1, 1,
+        1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1,
+        1, 2, 1, 1, 1,
+        2, 1, 1, 1, 1
+      },
+      tiles_row_major(state));
+  }
+
+  [TestMethod]
+  public void GenerateHandlesManyIsolatedRegions()
+  {
+    Map_State state = isolated_checkerboard_state(40, 40);
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_uniform_data(1)).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Seed = 43
+      });
+
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    assert_all_tiles(state, 1);
+  }
+
+  [TestMethod]
   public void TerrainConstraintFiltersCandidates()
   {
     Tileset_Generation_Data data = create_connected_data(1, 2);
@@ -548,6 +589,24 @@ public sealed class MapGenerationEngineTests
     state.Tiles[0, 0] = 1;
     state.Drawn[0, 0] = true;
     state.Locked[0, 0] = true;
+    return state;
+  }
+
+  private static Map_State isolated_checkerboard_state(int width, int height)
+  {
+    Map_State state = blank_state(width, height);
+    for (int y = 0; y < height; ++y)
+    {
+      for (int x = 0; x < width; ++x)
+      {
+        if ((x + y) % 2 == 1)
+        {
+          state.Tiles[x, y] = 1;
+          state.Drawn[x, y] = true;
+          state.Locked[x, y] = true;
+        }
+      }
+    }
     return state;
   }
 

@@ -192,6 +192,7 @@ public sealed class Map_Generation_Engine
     short[,] tile_priorities = this.compute_tile_priorities(state.Tiles);
     Generation_Frontier open_tiles = collect_frontier(state, tile_priorities);
     Lookahead_Scratch lookahead_scratch = new Lookahead_Scratch(state);
+    Remaining_Fillable_Cells remaining_fillable = new Remaining_Fillable_Cells(state);
     int unresolved = 0;
     int drawn_count = 0;
 
@@ -201,26 +202,30 @@ public sealed class Map_Generation_Engine
 
       if (open_tiles.Count == 0)
       {
-        List<Cell> fillable_cells = collect_fillable_cells(state);
-        if (fillable_cells.Count == 0)
+        if (remaining_fillable.Count == 0)
           break; // Every cell is already drawn or locked; nothing left to do.
 
-        int first_seed_index = random.Next(fillable_cells.Count);
+        int seed_index = remaining_fillable.pick(random);
         Cell? seeded_cell = null;
-        for (int offset = 0; offset < fillable_cells.Count; ++offset)
+        while (remaining_fillable.Count > 0)
         {
           cancellation_token.ThrowIfCancellationRequested();
-          Cell seed_cell = fillable_cells[(first_seed_index + offset) % fillable_cells.Count];
+          Cell seed_cell = new Cell(seed_index % state.Width, seed_index / state.Width);
           if (this.try_seed_tile(state, seed_cell, random, tile_drawn))
           {
+            remaining_fillable.remove(seed_index);
             seeded_cell = seed_cell;
             break;
           }
 
           mark_cell_as_unresolved(state, seed_cell, tile_drawn);
+          remaining_fillable.remove(seed_index);
+          lookahead_scratch.sync_cell(state, seed_cell.X, seed_cell.Y);
           ++unresolved;
           ++drawn_count;
           progress?.Report(drawn_count);
+          if (remaining_fillable.Count > 0)
+            seed_index = remaining_fillable.next_after(seed_index);
         }
         if (!seeded_cell.HasValue)
           break;
@@ -280,6 +285,7 @@ public sealed class Map_Generation_Engine
       }
 
       draw_tile(state, target.X, target.Y, chosen, tile_drawn);
+      remaining_fillable.remove(target.X + target.Y * state.Width);
       tile_priorities[target.X, target.Y] = this.tile_priority(source_tile);
       lookahead_scratch.sync_cell(state, target.X, target.Y);
       if (is_open_tile(state, target.X, target.Y))
@@ -334,25 +340,8 @@ public sealed class Map_Generation_Engine
     return new Cell(x + dx, y + dy);
   }
 
-  // Finds every cell that is still eligible to receive a seed tile: not already drawn
-  // (never overwrite existing content) and not locked (locked cells are always
-  // preserved). An empty list means the whole map is already drawn/locked.
-  private static List<Cell> collect_fillable_cells(Map_State state)
-  {
-    List<Cell> fillable = new List<Cell>();
-    for (int y = 0; y < state.Height; ++y)
-    {
-      for (int x = 0; x < state.Width; ++x)
-      {
-        if (!state.Drawn[x, y] && !state.Locked[x, y])
-          fillable.Add(new Cell(x, y));
-      }
-    }
-    return fillable;
-  }
-
   // Hardened replacement for draw_random_tile: the caller already guarantees `cell` is
-  // undrawn and unlocked (via collect_fillable_cells), so this only has to pick a random
+  // undrawn and unlocked (via Remaining_Fillable_Cells), so this only has to pick a random
   // terrain-compatible tile index for that exact cell instead of retrying random
   // positions. Returns false (without touching state) when no tile is valid for the
   // cell's terrain constraint or the tileset config is empty, so the caller can treat
@@ -611,6 +600,89 @@ public sealed class Map_Generation_Engine
     }
 
     return result;
+  }
+
+  private sealed class Remaining_Fillable_Cells
+  {
+    private readonly bool[] _active;
+    private readonly int[] _tree;
+
+    public int Count { get; private set; }
+
+    public Remaining_Fillable_Cells(Map_State state)
+    {
+      int cell_count = checked(state.Width * state.Height);
+      this._active = new bool[cell_count];
+      this._tree = new int[cell_count + 1];
+      for (int y = 0; y < state.Height; ++y)
+      {
+        for (int x = 0; x < state.Width; ++x)
+        {
+          if (state.Drawn[x, y] || state.Locked[x, y])
+            continue;
+          int index = x + y * state.Width;
+          this._active[index] = true;
+          this._tree[index + 1] = 1;
+          ++this.Count;
+        }
+      }
+      for (int index = 1; index < this._tree.Length; ++index)
+      {
+        int parent = index + (index & -index);
+        if (parent < this._tree.Length)
+          this._tree[parent] += this._tree[index];
+      }
+    }
+
+    public int pick(Random random)
+    {
+      return this.select_by_rank(random.Next(this.Count));
+    }
+
+    public int next_after(int cell)
+    {
+      int active_through_cell = this.prefix_count(cell);
+      return active_through_cell < this.Count
+        ? this.select_by_rank(active_through_cell)
+        : this.select_by_rank(0);
+    }
+
+    public void remove(int cell)
+    {
+      if (!this._active[cell])
+        return;
+      this._active[cell] = false;
+      --this.Count;
+      for (int index = cell + 1; index < this._tree.Length; index += index & -index)
+        --this._tree[index];
+    }
+
+    private int prefix_count(int cell)
+    {
+      int count = 0;
+      for (int index = cell + 1; index > 0; index -= index & -index)
+        count += this._tree[index];
+      return count;
+    }
+
+    private int select_by_rank(int rank)
+    {
+      int target = rank + 1;
+      int index = 0;
+      int bit = 1;
+      while (bit <= (this._tree.Length - 1) / 2)
+        bit <<= 1;
+      for (; bit != 0; bit >>= 1)
+      {
+        int next = index + bit;
+        if (next < this._tree.Length && this._tree[next] < target)
+        {
+          index = next;
+          target -= this._tree[next];
+        }
+      }
+      return index;
+    }
   }
 
   private sealed class Generation_Frontier
