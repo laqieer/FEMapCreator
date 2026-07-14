@@ -201,27 +201,35 @@ public sealed class Map_Generation_Engine
 
       if (open_tiles.Count == 0)
       {
-        Cell? seed_cell = pick_fillable_cell(state, random);
-        if (seed_cell == null)
+        List<Cell> fillable_cells = collect_fillable_cells(state);
+        if (fillable_cells.Count == 0)
           break; // Every cell is already drawn or locked; nothing left to do.
 
-        if (!this.try_seed_tile(state, seed_cell.Value, random, tile_drawn))
+        int first_seed_index = random.Next(fillable_cells.Count);
+        Cell? seeded_cell = null;
+        for (int offset = 0; offset < fillable_cells.Count; ++offset)
         {
-          // No valid tile exists for any remaining fillable cell (e.g. an impossible
-          // terrain constraint, or an empty tileset config). Never silently report
-          // completion: mark every remaining fillable cell as an unresolved hole.
-          int unresolved_cells = mark_unfillable_cells_as_unresolved(state, tile_drawn);
-          unresolved += unresolved_cells;
-          drawn_count += unresolved_cells;
-          if (unresolved_cells > 0)
-            progress?.Report(drawn_count);
-          break;
-        }
+          cancellation_token.ThrowIfCancellationRequested();
+          Cell seed_cell = fillable_cells[(first_seed_index + offset) % fillable_cells.Count];
+          if (this.try_seed_tile(state, seed_cell, random, tile_drawn))
+          {
+            seeded_cell = seed_cell;
+            break;
+          }
 
-        tile_priorities[seed_cell.Value.X, seed_cell.Value.Y] = this.tile_priority(state.Tiles[seed_cell.Value.X, seed_cell.Value.Y]);
-        lookahead_scratch.sync_cell(state, seed_cell.Value.X, seed_cell.Value.Y);
-        if (is_open_tile(state, seed_cell.Value.X, seed_cell.Value.Y))
-          open_tiles.add(seed_cell.Value.X + seed_cell.Value.Y * state.Width, tile_priorities[seed_cell.Value.X, seed_cell.Value.Y]);
+          mark_cell_as_unresolved(state, seed_cell, tile_drawn);
+          ++unresolved;
+          ++drawn_count;
+          progress?.Report(drawn_count);
+        }
+        if (!seeded_cell.HasValue)
+          break;
+
+        Cell seeded = seeded_cell.Value;
+        tile_priorities[seeded.X, seeded.Y] = this.tile_priority(state.Tiles[seeded.X, seeded.Y]);
+        lookahead_scratch.sync_cell(state, seeded.X, seeded.Y);
+        if (is_open_tile(state, seeded.X, seeded.Y))
+          open_tiles.add(seeded.X + seeded.Y * state.Width, tile_priorities[seeded.X, seeded.Y]);
         ++drawn_count;
         progress?.Report(drawn_count);
         continue;
@@ -328,10 +336,8 @@ public sealed class Map_Generation_Engine
 
   // Finds every cell that is still eligible to receive a seed tile: not already drawn
   // (never overwrite existing content) and not locked (locked cells are always
-  // preserved). Returns null when the whole map is already drawn/locked, so callers
-  // can stop without seeding, satisfying the "never overwrite, never loop forever"
-  // contract that the original position-sampling draw_random_tile could violate.
-  private static Cell? pick_fillable_cell(Map_State state, Random random)
+  // preserved). An empty list means the whole map is already drawn/locked.
+  private static List<Cell> collect_fillable_cells(Map_State state)
   {
     List<Cell> fillable = new List<Cell>();
     for (int y = 0; y < state.Height; ++y)
@@ -342,11 +348,11 @@ public sealed class Map_Generation_Engine
           fillable.Add(new Cell(x, y));
       }
     }
-    return fillable.Count == 0 ? (Cell?) null : fillable[random.Next(fillable.Count)];
+    return fillable;
   }
 
   // Hardened replacement for draw_random_tile: the caller already guarantees `cell` is
-  // undrawn and unlocked (via pick_fillable_cell), so this only has to pick a random
+  // undrawn and unlocked (via collect_fillable_cells), so this only has to pick a random
   // terrain-compatible tile index for that exact cell instead of retrying random
   // positions. Returns false (without touching state) when no tile is valid for the
   // cell's terrain constraint or the tileset config is empty, so the caller can treat
@@ -379,26 +385,11 @@ public sealed class Map_Generation_Engine
     return true;
   }
 
-  // Guarantees a run never silently reports completion while cells remain untouched:
-  // every cell that is still undrawn and unlocked once seeding has failed everywhere is
-  // committed as an explicit unresolved hole (drawn tile 0), and counted.
-  private static int mark_unfillable_cells_as_unresolved(Map_State state, Tile_Drawn_Callback tile_drawn)
+  private static void mark_cell_as_unresolved(Map_State state, Cell cell, Tile_Drawn_Callback tile_drawn)
   {
-    int count = 0;
-    for (int y = 0; y < state.Height; ++y)
-    {
-      for (int x = 0; x < state.Width; ++x)
-      {
-        if (!state.Drawn[x, y] && !state.Locked[x, y])
-        {
-          state.Tiles[x, y] = 0;
-          state.Drawn[x, y] = true;
-          tile_drawn?.Invoke(x, y, 0);
-          ++count;
-        }
-      }
-    }
-    return count;
+    state.Tiles[cell.X, cell.Y] = 0;
+    state.Drawn[cell.X, cell.Y] = true;
+    tile_drawn?.Invoke(cell.X, cell.Y, 0);
   }
 
   private static void draw_tile(Map_State state, int x, int y, int index, Tile_Drawn_Callback tile_drawn)

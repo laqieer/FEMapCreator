@@ -352,7 +352,7 @@ public sealed class MapGenerationEngineTests
 
     Assert.AreEqual(4, result.Unresolved_Tile_Count);
     assert_all_tiles(state, 0);
-    CollectionAssert.AreEqual(new int[] { 4 }, progress.Values);
+    CollectionAssert.AreEqual(new int[] { 1, 2, 3, 4 }, progress.Values);
   }
 
   [TestMethod]
@@ -378,6 +378,30 @@ public sealed class MapGenerationEngineTests
 
     Assert.AreEqual(4, result.Unresolved_Tile_Count);
     assert_all_tiles(state, 0);
+  }
+
+  [TestMethod]
+  public void GenerateMarksOnlyImpossibleSeedCellUnresolved()
+  {
+    Data_Tileset metadata = new Data_Tileset()
+    {
+      Terrain_Tags = new List<int>() { 0, 1 }
+    };
+    Map_State state = blank_state(2, 1);
+    state.Terrain[0, 0] = 999;
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_uniform_data(1), metadata).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Seed = 1
+      });
+
+    Assert.AreEqual(1, result.Unresolved_Tile_Count);
+    Assert.AreEqual(0, state.Tiles[0, 0]);
+    Assert.IsTrue(state.Drawn[0, 0]);
+    Assert.AreEqual(1, state.Tiles[1, 0]);
+    Assert.IsTrue(state.Drawn[1, 0]);
   }
 
   [TestMethod]
