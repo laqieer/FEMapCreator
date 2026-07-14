@@ -53,6 +53,7 @@ public class FE_Map_Creator_Form : Form
   private HashSet<int> Blocked_Terrain_Types = new HashSet<int>();
   private static Random rand = new Random();
   protected bool Updating;
+  private CancellationTokenSource Map_Generation_Cancellation;
   protected bool Drawing;
   protected bool Selecting;
   protected Point Drawing_Mouse_Loc;
@@ -88,6 +89,7 @@ public class FE_Map_Creator_Form : Form
   private NumericUpDown HeightUpDown;
   private NumericUpDown DepthUpDown;
   private NumericUpDown DistUpDown;
+  private Button CancelOperationButton;
   private Label label1;
   private Label label2;
   private Button NewMapButton;
@@ -917,8 +919,39 @@ public class FE_Map_Creator_Form : Form
     catch (InvalidOperationException) { }
   }
 
-  protected void repair_map(int depth, int radius, int zoom)
+  private CancellationToken start_map_operation(string status)
   {
+    this.Map_Generation_Cancellation = new CancellationTokenSource();
+    this.Updating = true;
+    this.CancelOperationButton.Enabled = true;
+    this.StatusbarSpacerLabel.Text = status;
+    return this.Map_Generation_Cancellation.Token;
+  }
+
+  private void finish_map_operation(CancellationToken cancellation_token, string status)
+  {
+    if (this.Map_Generation_Cancellation == null || this.Map_Generation_Cancellation.Token != cancellation_token)
+      return;
+    CancellationTokenSource cancellation = this.Map_Generation_Cancellation;
+    this.Map_Generation_Cancellation = null;
+    this.Updating = false;
+    this.CancelOperationButton.Enabled = false;
+    this.StatusbarSpacerLabel.Text = status;
+    cancellation.Dispose();
+  }
+
+  private void show_map_generation_result(string operation, Map_Generation_Result result)
+  {
+    if (result.Unresolved_Tile_Count <= 0)
+      return;
+    MessageBox.Show(this, $"{operation} completed with {result.Unresolved_Tile_Count} unresolved tiles.\r\nSeed: {result.Seed}.", $"{operation} Incomplete", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+  }
+
+  protected void repair_map(int depth, int radius, int zoom, CancellationToken cancellation_token)
+  {
+    Map_Generation_Result result = null;
+    Exception operation_error = null;
+    string status = "Map repair failed.";
     try
     {
       Map_State state = new Map_State(this.Map_Tiles, this.Drawn_Tiles, this.Locked_Tiles, this.Terrain_Types);
@@ -935,21 +968,49 @@ public class FE_Map_Creator_Form : Form
         this.MapPicture.Invalidate();
       });
       Thread.Sleep(25);
-      engine.repair(state, options, CancellationToken.None, callback);
-      this.invoke_on_ui(() => this.MapPicture.Invalidate());
+      cancellation_token.ThrowIfCancellationRequested();
+      result = engine.repair(state, options, cancellation_token, callback);
+      status = $"Map repair complete. Seed: {result.Seed}.";
     }
-    catch (Exception ex)
+    catch (OperationCanceledException) when (cancellation_token.IsCancellationRequested)
     {
-      this.invoke_on_ui(() => MessageBox.Show(this, ex.Message, "Map Repair Error", MessageBoxButtons.OK, MessageBoxIcon.Error));
+      status = "Map repair cancelled.";
+    }
+    catch (ArgumentException ex)
+    {
+      operation_error = ex;
+    }
+    catch (InvalidOperationException ex)
+    {
+      operation_error = ex;
+    }
+    catch (KeyNotFoundException ex)
+    {
+      operation_error = ex;
+    }
+    catch (IndexOutOfRangeException ex)
+    {
+      operation_error = ex;
     }
     finally
     {
-      this.Updating = false;
+      this.invoke_on_ui(() =>
+      {
+        this.MapPicture.Invalidate();
+        this.finish_map_operation(cancellation_token, status);
+        if (operation_error != null)
+          MessageBox.Show(this, operation_error.Message, "Map Repair Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        else if (result != null)
+          this.show_map_generation_result("Map Repair", result);
+      });
     }
   }
 
-  protected void generate_map(int zoom)
+  protected void generate_map(int zoom, CancellationToken cancellation_token = default)
   {
+    Map_Generation_Result result = null;
+    Exception operation_error = null;
+    string status = "Map generation failed.";
     try
     {
       Map_State state = new Map_State(this.Map_Tiles, this.Drawn_Tiles, this.Locked_Tiles, this.Terrain_Types);
@@ -965,16 +1026,41 @@ public class FE_Map_Creator_Form : Form
         this.refresh_panel_size();
         this.MapPicture.Invalidate();
       });
-      engine.generate(state, options, CancellationToken.None, callback);
-      this.invoke_on_ui(() => this.MapPicture.Invalidate());
+      cancellation_token.ThrowIfCancellationRequested();
+      result = engine.generate(state, options, cancellation_token, callback);
+      status = $"Map generation complete. Seed: {result.Seed}.";
     }
-    catch (Exception ex)
+    catch (OperationCanceledException) when (cancellation_token.IsCancellationRequested)
     {
-      this.invoke_on_ui(() => MessageBox.Show(this, ex.Message, "Map Generation Error", MessageBoxButtons.OK, MessageBoxIcon.Error));
+      status = "Map generation cancelled.";
+    }
+    catch (ArgumentException ex)
+    {
+      operation_error = ex;
+    }
+    catch (InvalidOperationException ex)
+    {
+      operation_error = ex;
+    }
+    catch (KeyNotFoundException ex)
+    {
+      operation_error = ex;
+    }
+    catch (IndexOutOfRangeException ex)
+    {
+      operation_error = ex;
     }
     finally
     {
-      this.Updating = false;
+      this.invoke_on_ui(() =>
+      {
+        this.MapPicture.Invalidate();
+        this.finish_map_operation(cancellation_token, status);
+        if (operation_error != null)
+          MessageBox.Show(this, operation_error.Message, "Map Generation Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        else if (result != null)
+          this.show_map_generation_result("Map Generation", result);
+      });
     }
   }
 
@@ -2547,7 +2633,6 @@ label_27:
   {
     if (!(this.WidthUpDown.Value > 0M) || !(this.HeightUpDown.Value > 0M) || this.Updating)
       return;
-    this.Updating = true;
     this.Text = string.Format("Map Editor - New Map");
     this.Map_Width = (int) this.WidthUpDown.Value;
     this.Map_Height = (int) this.HeightUpDown.Value;
@@ -2582,27 +2667,32 @@ label_27:
       this.Terrain_Types = new int[this.Map_Width, this.Map_Height];
     this.MapPicture.Invalidate();
     int zoom = this.Zoom;
-    new Thread(() => this.generate_map(zoom)).Start();
+    CancellationToken cancellation_token = this.start_map_operation("Generating map...");
+    new Thread(() => this.generate_map(zoom, cancellation_token)).Start();
   }
 
   private void repairMapToolStripMenuItem_Click(object sender, EventArgs e)
   {
-    if (this.Map_Tiles == null)
+    if (this.Map_Tiles == null || this.Updating)
       return;
     HashSet<Point> pointSet = new HashSet<Point>();
     for (int y = 0; y < this.Map_Height; ++y)
     {
       for (int x = 0; x < this.Map_Width; ++x)
       {
-        if (this.Terrain_Types[x, y] != 0 && this.tileset_data != null && this.tileset_data.Terrain_Tags.Count > this.Map_Tiles[x, y] && (this.Terrain_Types[x, y] > 0 ? (this.tileset_data.Terrain_Tags[this.Map_Tiles[x, y]] != this.Terrain_Types[x, y] ? 1 : 0) : (this.tileset_data.Terrain_Tags[this.Map_Tiles[x, y]] == -this.Terrain_Types[x, y] ? 1 : 0)) != 0)
-          this.Map_Tiles[x, y] = 0;
-        if (this.Map_Tiles[x, y] == 0)
+        bool repair_candidate = this.Map_Tiles[x, y] == 0;
+        if (!repair_candidate && this.Terrain_Types[x, y] != 0 && this.tileset_data != null && this.tileset_data.Terrain_Tags.Count > this.Map_Tiles[x, y])
+          repair_candidate = this.Terrain_Types[x, y] > 0 ? this.tileset_data.Terrain_Tags[this.Map_Tiles[x, y]] != this.Terrain_Types[x, y] : this.tileset_data.Terrain_Tags[this.Map_Tiles[x, y]] == -this.Terrain_Types[x, y];
+        if (repair_candidate)
           pointSet.Add(new Point(x, y));
       }
     }
-    if (pointSet.Count == 0 || this.Updating)
+    if (pointSet.Count == 0)
+    {
+      this.StatusbarSpacerLabel.Text = "Nothing to repair.";
+      MessageBox.Show(this, "Nothing to repair.", "Map Repair", MessageBoxButtons.OK, MessageBoxIcon.Information);
       return;
-    this.Updating = true;
+    }
     lock (this.MapPicture)
       this.refresh_panel_size();
     this.refresh_panel_size();
@@ -2610,10 +2700,20 @@ label_27:
     int depth = (int) this.DepthUpDown.Value;
     int radius = (int) this.DistUpDown.Value;
     int zoom = this.Zoom;
-    new Thread((ThreadStart) (() => this.repair_map(depth, radius, zoom)))
+    CancellationToken cancellation_token = this.start_map_operation("Repairing map...");
+    new Thread((ThreadStart) (() => this.repair_map(depth, radius, zoom, cancellation_token)))
     {
       IsBackground = false
     }.Start();
+  }
+
+  private void CancelOperationButton_Click(object sender, EventArgs e)
+  {
+    if (this.Map_Generation_Cancellation == null || this.Map_Generation_Cancellation.IsCancellationRequested)
+      return;
+    this.Map_Generation_Cancellation.Cancel();
+    this.CancelOperationButton.Enabled = false;
+    this.StatusbarSpacerLabel.Text = "Cancelling...";
   }
 
   private void convertMapToTerrainTagsToolStripMenuItem_Click(object sender, EventArgs e)
@@ -2775,8 +2875,17 @@ label_27:
 
   protected override void Dispose(bool disposing)
   {
-    if (disposing && this.components != null)
-      this.components.Dispose();
+    if (disposing)
+    {
+      if (this.Map_Generation_Cancellation != null)
+      {
+        this.Map_Generation_Cancellation.Cancel();
+        this.Map_Generation_Cancellation.Dispose();
+        this.Map_Generation_Cancellation = null;
+      }
+      if (this.components != null)
+        this.components.Dispose();
+    }
     base.Dispose(disposing);
   }
 
@@ -2794,6 +2903,7 @@ label_27:
     this.DepthUpDown = new NumericUpDown();
     this.label2 = new Label();
     this.DistUpDown = new NumericUpDown();
+    this.CancelOperationButton = new Button();
     this.PictureBoxPanel = new Panel();
     this.MapPicture = new PictureBox();
     this.ToolsFlowPanel = new FlowLayoutPanel();
@@ -2876,6 +2986,7 @@ label_27:
     this.flowLayoutPanel1.Controls.Add((Control) this.DepthUpDown);
     this.flowLayoutPanel1.Controls.Add((Control) this.label2);
     this.flowLayoutPanel1.Controls.Add((Control) this.DistUpDown);
+    this.flowLayoutPanel1.Controls.Add((Control) this.CancelOperationButton);
     this.flowLayoutPanel1.Dock = DockStyle.Fill;
     this.flowLayoutPanel1.Location = new Point(3, 379);
     this.flowLayoutPanel1.Name = "flowLayoutPanel1";
@@ -3008,6 +3119,15 @@ label_27:
       0,
       0
     });
+    this.CancelOperationButton.Enabled = false;
+    this.CancelOperationButton.Location = new Point(209, 32 /*0x20*/);
+    this.CancelOperationButton.Name = "CancelOperationButton";
+    this.CancelOperationButton.Size = new Size(75, 23);
+    this.CancelOperationButton.TabIndex = 16 /*0x10*/;
+    this.CancelOperationButton.Text = "Cancel";
+    this.toolTip1.SetToolTip((Control) this.CancelOperationButton, "Cancels the active map generation or repair operation.");
+    this.CancelOperationButton.UseVisualStyleBackColor = true;
+    this.CancelOperationButton.Click += new EventHandler(this.CancelOperationButton_Click);
     this.PictureBoxPanel.AutoScroll = true;
     this.PictureBoxPanel.Controls.Add((Control) this.MapPicture);
     this.PictureBoxPanel.Dock = DockStyle.Fill;
