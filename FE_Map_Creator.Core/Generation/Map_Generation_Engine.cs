@@ -29,11 +29,15 @@ public sealed class Map_Generation_Engine
 
   private readonly Tileset_Generation_Data _tileset_generation_data;
   private readonly Data_Tileset _terrain_tileset;
+  private readonly Dictionary<short, short[]> _identical_aliases_by_canonical;
 
   public Map_Generation_Engine(Tileset_Generation_Data tileset_generation_data, Data_Tileset terrain_tileset = null)
   {
     this._tileset_generation_data = tileset_generation_data ?? throw new ArgumentNullException(nameof(tileset_generation_data));
     this._terrain_tileset = terrain_tileset;
+    this._identical_aliases_by_canonical = tileset_generation_data.identical_tiles
+      .GroupBy(pair => pair.Value)
+      .ToDictionary(group => group.Key, group => group.Select(pair => pair.Key).ToArray());
   }
 
   private Dictionary<int, Tile_Data> tileset_config_data => this._tileset_generation_data.generation_data;
@@ -115,6 +119,8 @@ public sealed class Map_Generation_Engine
     {
       for (int x = 0; x < state.Width; ++x)
       {
+        if (state.Locked[x, y])
+          continue;
         int terrain = state.Terrain[x, y];
         if (terrain == 0)
           continue;
@@ -184,7 +190,8 @@ public sealed class Map_Generation_Engine
     IProgress<int> progress)
   {
     short[,] tile_priorities = this.compute_tile_priorities(state.Tiles);
-    HashSet<int> open_tiles = collect_frontier(state);
+    Generation_Frontier open_tiles = collect_frontier(state, tile_priorities);
+    Lookahead_Scratch lookahead_scratch = new Lookahead_Scratch(state);
     int unresolved = 0;
     int drawn_count = 0;
 
@@ -198,7 +205,7 @@ public sealed class Map_Generation_Engine
         if (seed_cell == null)
           break; // Every cell is already drawn or locked; nothing left to do.
 
-        if (!this.try_seed_tile(state, seed_cell.Value, random, open_tiles, tile_drawn))
+        if (!this.try_seed_tile(state, seed_cell.Value, random, tile_drawn))
         {
           // No valid tile exists for any remaining fillable cell (e.g. an impossible
           // terrain constraint, or an empty tileset config). Never silently report
@@ -208,17 +215,20 @@ public sealed class Map_Generation_Engine
         }
 
         tile_priorities[seed_cell.Value.X, seed_cell.Value.Y] = this.tile_priority(state.Tiles[seed_cell.Value.X, seed_cell.Value.Y]);
+        lookahead_scratch.sync_cell(state, seed_cell.Value.X, seed_cell.Value.Y);
+        if (is_open_tile(state, seed_cell.Value.X, seed_cell.Value.Y))
+          open_tiles.add(seed_cell.Value.X + seed_cell.Value.Y * state.Width, tile_priorities[seed_cell.Value.X, seed_cell.Value.Y]);
         continue;
       }
 
-      int open_index = pick_first_open_tile(open_tiles, tile_priorities, state.Width, random);
+      int open_index = open_tiles.pick(random);
       int x = open_index % state.Width;
       int y = open_index / state.Width;
       int source_tile = state.Tiles[x, y];
 
       if (!is_open_tile(state, x, y))
       {
-        open_tiles.Remove(open_index);
+        open_tiles.remove(open_index);
         continue;
       }
 
@@ -226,7 +236,7 @@ public sealed class Map_Generation_Engine
       byte dir = open_dirs[random.Next(open_dirs.Count)];
       Cell target = neighbor_cell(x, y, dir);
 
-      List<short> candidates = this.test_valid_tiles(state, target.X, target.Y, depth, cancellation_token);
+      List<short> candidates = this.test_valid_tiles(state, target.X, target.Y, depth, cancellation_token, lookahead_scratch);
       short chosen;
       if (candidates.Count == 0 || candidates.Count == 1 && candidates[0] == 0)
       {
@@ -249,22 +259,22 @@ public sealed class Map_Generation_Engine
         chosen = candidates[random.Next(candidates.Count)];
       }
 
-      if (this._tileset_generation_data.identical_tiles.TryGetValue(chosen, out short canonical))
+      if (this._tileset_generation_data.identical_tiles.TryGetValue(chosen, out short canonical)
+        && this._identical_aliases_by_canonical.TryGetValue(canonical, out short[] group))
       {
-        List<short> group = this._tileset_generation_data.identical_tiles
-          .Where(pair => pair.Value == canonical)
-          .Select(pair => pair.Key)
-          .ToList();
-        chosen = group[random.Next(group.Count)];
+        chosen = group[random.Next(group.Length)];
       }
 
-      draw_tile(state, target.X, target.Y, chosen, open_tiles, tile_drawn);
+      draw_tile(state, target.X, target.Y, chosen, tile_drawn);
       tile_priorities[target.X, target.Y] = this.tile_priority(source_tile);
+      lookahead_scratch.sync_cell(state, target.X, target.Y);
+      if (is_open_tile(state, target.X, target.Y))
+        open_tiles.add(target.X + target.Y * state.Width, tile_priorities[target.X, target.Y]);
       ++drawn_count;
       progress?.Report(drawn_count);
 
       if (!is_open_tile(state, x, y))
-        open_tiles.Remove(open_index);
+        open_tiles.remove(open_index);
     }
 
     return unresolved;
@@ -273,31 +283,18 @@ public sealed class Map_Generation_Engine
   // Faithful port of the frontier filter at the start of generate_map(int depth) and of
   // the full-map scan in get_open_tiles_for_repair: every drawn cell that still has an
   // open (undrawn, unlocked) neighbor is part of the expansion frontier.
-  private static HashSet<int> collect_frontier(Map_State state)
+  private static Generation_Frontier collect_frontier(Map_State state, short[,] tile_priorities)
   {
-    HashSet<int> open_tiles = new HashSet<int>();
+    Generation_Frontier open_tiles = new Generation_Frontier();
     for (int y = 0; y < state.Height; ++y)
     {
       for (int x = 0; x < state.Width; ++x)
       {
         if (state.Drawn[x, y] && is_open_tile(state, x, y))
-          open_tiles.Add(x + y * state.Width);
+          open_tiles.add(x + y * state.Width, tile_priorities[x, y]);
       }
     }
     return open_tiles;
-  }
-
-  private static int pick_first_open_tile(HashSet<int> open_tiles, short[,] tile_priorities, int width, Random random)
-  {
-    short max_priority = short.MinValue;
-    foreach (int open_tile in open_tiles)
-    {
-      short priority = tile_priorities[open_tile % width, open_tile / width];
-      if (priority > max_priority)
-        max_priority = priority;
-    }
-    List<int> candidates = open_tiles.Where(open_tile => tile_priorities[open_tile % width, open_tile / width] == max_priority).ToList();
-    return candidates[random.Next(candidates.Count)];
   }
 
   private static bool is_open_tile(Map_State state, int x, int y) => get_open_dirs(state, x, y).Count > 0;
@@ -349,7 +346,7 @@ public sealed class Map_Generation_Engine
   // cell's terrain constraint or the tileset config is empty, so the caller can treat
   // that as "impossible to seed" rather than silently giving up after a fixed number
   // of attempts.
-  private bool try_seed_tile(Map_State state, Cell cell, Random random, HashSet<int> open_tiles, Tile_Drawn_Callback tile_drawn)
+  private bool try_seed_tile(Map_State state, Cell cell, Random random, Tile_Drawn_Callback tile_drawn)
   {
     Dictionary<int, Tile_Data> config = this.tileset_config_data;
     if (config.Count == 0)
@@ -372,7 +369,7 @@ public sealed class Map_Generation_Engine
       index = keys[random.Next(keys.Count)];
     }
 
-    draw_tile(state, cell.X, cell.Y, index, open_tiles, tile_drawn);
+    draw_tile(state, cell.X, cell.Y, index, tile_drawn);
     return true;
   }
 
@@ -398,12 +395,10 @@ public sealed class Map_Generation_Engine
     return count;
   }
 
-  private static void draw_tile(Map_State state, int x, int y, int index, HashSet<int> open_tiles, Tile_Drawn_Callback tile_drawn)
+  private static void draw_tile(Map_State state, int x, int y, int index, Tile_Drawn_Callback tile_drawn)
   {
     state.Drawn[x, y] = true;
     state.Tiles[x, y] = index;
-    if (is_open_tile(state, x, y))
-      open_tiles.Add(x + y * state.Width);
     tile_drawn?.Invoke(x, y, index);
   }
 
@@ -428,7 +423,11 @@ public sealed class Map_Generation_Engine
   private int valid_tile_priority(int index, byte dir, short other_tile)
   {
     if (this.tileset_config_data.TryGetValue(index, out Tile_Data data) && data.Valid_Tile_Priority[dir].TryGetValue(other_tile, out short priority))
+    {
+      if (priority <= 0)
+        throw new InvalidOperationException($"Adjacency weight for tile {index}, direction {dir}, neighbor {other_tile} must be positive.");
       return priority;
+    }
     return 1;
   }
 
@@ -440,12 +439,14 @@ public sealed class Map_Generation_Engine
   // cancellation or any other exception raised mid-search can never leave transient
   // lookahead commitments behind in the real Map_State. The caller commits the chosen
   // tile itself via draw_tile once this returns, so no cleanup step is needed here.
-  private List<short> test_valid_tiles(Map_State state, int base_x, int base_y, int depth, CancellationToken cancellation_token)
+  private List<short> test_valid_tiles(
+    Map_State state,
+    int base_x,
+    int base_y,
+    int depth,
+    CancellationToken cancellation_token,
+    Lookahead_Scratch scratch)
   {
-    int[,] scratch_tiles = new int[state.Width, state.Height];
-    Array.Copy(state.Tiles, scratch_tiles, state.Tiles.Length);
-    bool[,] scratch_drawn = (bool[,]) state.Drawn.Clone();
-
     List<Cell> locs = new List<Cell>();
     for (int ring = 0; ring <= depth; ++ring)
     {
@@ -455,78 +456,88 @@ public sealed class Map_Generation_Engine
         {
           if (Math.Abs(dx) + Math.Abs(dy) == ring
             && !state.is_off_map(base_x + dx, base_y + dy)
-            && (!scratch_drawn[base_x + dx, base_y + dy]
+            && (!state.Drawn[base_x + dx, base_y + dy]
               || state.Terrain[base_x + dx, base_y + dy] != 0 && this._terrain_tileset != null && state.Tiles[base_x + dx, base_y + dy] == 0))
             locs.Add(new Cell(base_x + dx, base_y + dy));
         }
       }
     }
 
-    int[] candidate_index = new int[locs.Count];
-    int cursor = 0;
-    List<short>[] tiles = new List<short>[candidate_index.Length];
-    tiles[cursor] = new List<short>(this.valid_tiles(state, locs[cursor].X, locs[cursor].Y, scratch_tiles, scratch_drawn));
-    if (tiles[cursor].Count == 0 || cursor + 1 >= candidate_index.Length || tiles[cursor].Count == 1 && tiles[cursor][0] == 0)
-      return tiles[cursor];
-
-    candidate_index[cursor] = 0;
-    scratch_drawn[locs[cursor].X, locs[cursor].Y] = true;
-    scratch_tiles[locs[cursor].X, locs[cursor].Y] = tiles[cursor][candidate_index[cursor]];
-
-    while (cursor != -1)
+    scratch.restore_cells(state, locs);
+    int[,] scratch_tiles = scratch.Tiles;
+    bool[,] scratch_drawn = scratch.Drawn;
+    try
     {
-      cancellation_token.ThrowIfCancellationRequested();
-      if (this.valid_surrounding_tiles(state, cursor, candidate_index.Length, scratch_tiles, scratch_drawn, locs, tiles))
+      int[] candidate_index = new int[locs.Count];
+      int cursor = 0;
+      List<short>[] tiles = new List<short>[candidate_index.Length];
+      tiles[cursor] = new List<short>(this.valid_tiles(state, locs[cursor].X, locs[cursor].Y, scratch_tiles, scratch_drawn));
+      if (tiles[cursor].Count == 0 || cursor + 1 >= candidate_index.Length || tiles[cursor].Count == 1 && tiles[cursor][0] == 0)
+        return tiles[cursor];
+
+      candidate_index[cursor] = 0;
+      scratch_drawn[locs[cursor].X, locs[cursor].Y] = true;
+      scratch_tiles[locs[cursor].X, locs[cursor].Y] = tiles[cursor][candidate_index[cursor]];
+
+      while (cursor != -1)
       {
-        if (cursor + 2 == candidate_index.Length)
+        cancellation_token.ThrowIfCancellationRequested();
+        if (this.valid_surrounding_tiles(state, cursor, candidate_index.Length, scratch_tiles, scratch_drawn, locs, tiles))
         {
-          for (int i = cursor; i > 0; --i)
+          if (cursor + 2 == candidate_index.Length)
           {
-            scratch_drawn[locs[i].X, locs[i].Y] = false;
-            scratch_tiles[locs[i].X, locs[i].Y] = 0;
+            for (int i = cursor; i > 0; --i)
+            {
+              scratch_drawn[locs[i].X, locs[i].Y] = false;
+              scratch_tiles[locs[i].X, locs[i].Y] = 0;
+            }
+            cursor = 0;
+            ++candidate_index[cursor];
+            if (candidate_index[cursor] < tiles[cursor].Count)
+              scratch_tiles[locs[cursor].X, locs[cursor].Y] = tiles[cursor][candidate_index[cursor]];
+            else
+              break;
           }
-          cursor = 0;
-          ++candidate_index[cursor];
-          if (candidate_index[cursor] < tiles[cursor].Count)
-            scratch_tiles[locs[cursor].X, locs[cursor].Y] = tiles[cursor][candidate_index[cursor]];
           else
-            break;
+          {
+            ++cursor;
+            candidate_index[cursor] = 0;
+            scratch_drawn[locs[cursor].X, locs[cursor].Y] = true;
+            scratch_tiles[locs[cursor].X, locs[cursor].Y] = tiles[cursor][candidate_index[cursor]];
+          }
         }
         else
         {
-          ++cursor;
-          candidate_index[cursor] = 0;
-          scratch_drawn[locs[cursor].X, locs[cursor].Y] = true;
+          do
+          {
+            ++candidate_index[cursor];
+            if (cursor == 0)
+            {
+              --candidate_index[cursor];
+              tiles[cursor].RemoveAt(candidate_index[cursor]);
+            }
+            if (candidate_index[cursor] >= tiles[cursor].Count)
+            {
+              scratch_drawn[locs[cursor].X, locs[cursor].Y] = false;
+              scratch_tiles[locs[cursor].X, locs[cursor].Y] = 0;
+              --cursor;
+            }
+            else
+              goto assign_next_candidate;
+          }
+          while (cursor != -1);
+          continue;
+          assign_next_candidate:
           scratch_tiles[locs[cursor].X, locs[cursor].Y] = tiles[cursor][candidate_index[cursor]];
         }
       }
-      else
-      {
-        do
-        {
-          ++candidate_index[cursor];
-          if (cursor == 0)
-          {
-            --candidate_index[cursor];
-            tiles[cursor].RemoveAt(candidate_index[cursor]);
-          }
-          if (candidate_index[cursor] >= tiles[cursor].Count)
-          {
-            scratch_drawn[locs[cursor].X, locs[cursor].Y] = false;
-            scratch_tiles[locs[cursor].X, locs[cursor].Y] = 0;
-            --cursor;
-          }
-          else
-            goto assign_next_candidate;
-        }
-        while (cursor != -1);
-        continue;
-        assign_next_candidate:
-        scratch_tiles[locs[cursor].X, locs[cursor].Y] = tiles[cursor][candidate_index[cursor]];
-      }
-    }
 
-    return tiles[0];
+      return tiles[0];
+    }
+    finally
+    {
+      scratch.restore_cells(state, locs);
+    }
   }
 
   private bool valid_surrounding_tiles(Map_State state, int cursor, int length, int[,] scratch_tiles, bool[,] scratch_drawn, List<Cell> locs, List<short>[] tiles)
@@ -603,5 +614,77 @@ public sealed class Map_Generation_Engine
     }
 
     return result;
+  }
+
+  private sealed class Generation_Frontier
+  {
+    private readonly Dictionary<int, short> _priorities_by_tile = new Dictionary<int, short>();
+    private readonly Dictionary<short, HashSet<int>> _tiles_by_priority = new Dictionary<short, HashSet<int>>();
+    private readonly SortedSet<short> _active_priorities = new SortedSet<short>();
+
+    public int Count => this._priorities_by_tile.Count;
+
+    public void add(int tile, short priority)
+    {
+      if (this._priorities_by_tile.TryGetValue(tile, out short old_priority))
+      {
+        if (old_priority == priority)
+          return;
+        this.remove(tile);
+      }
+
+      if (!this._tiles_by_priority.TryGetValue(priority, out HashSet<int> tiles))
+      {
+        tiles = new HashSet<int>();
+        this._tiles_by_priority.Add(priority, tiles);
+        this._active_priorities.Add(priority);
+      }
+      tiles.Add(tile);
+      this._priorities_by_tile.Add(tile, priority);
+    }
+
+    public void remove(int tile)
+    {
+      if (!this._priorities_by_tile.Remove(tile, out short priority))
+        return;
+      HashSet<int> tiles = this._tiles_by_priority[priority];
+      tiles.Remove(tile);
+      if (tiles.Count == 0)
+      {
+        this._tiles_by_priority.Remove(priority);
+        this._active_priorities.Remove(priority);
+      }
+    }
+
+    public int pick(Random random)
+    {
+      HashSet<int> candidates = this._tiles_by_priority[this._active_priorities.Max];
+      return candidates.ElementAt(random.Next(candidates.Count));
+    }
+  }
+
+  private sealed class Lookahead_Scratch
+  {
+    public readonly int[,] Tiles;
+    public readonly bool[,] Drawn;
+
+    public Lookahead_Scratch(Map_State state)
+    {
+      this.Tiles = new int[state.Width, state.Height];
+      Array.Copy(state.Tiles, this.Tiles, state.Tiles.Length);
+      this.Drawn = (bool[,]) state.Drawn.Clone();
+    }
+
+    public void sync_cell(Map_State state, int x, int y)
+    {
+      this.Tiles[x, y] = state.Tiles[x, y];
+      this.Drawn[x, y] = state.Drawn[x, y];
+    }
+
+    public void restore_cells(Map_State state, IEnumerable<Cell> cells)
+    {
+      foreach (Cell cell in cells)
+        this.sync_cell(state, cell.X, cell.Y);
+    }
   }
 }

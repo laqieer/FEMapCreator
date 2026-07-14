@@ -45,6 +45,43 @@ public sealed class MapGenerationEngineTests
   }
 
   [TestMethod]
+  public void GenerateWithFixedSeedPreservesStableOutput()
+  {
+    Map_State state = blank_state(6, 5);
+
+    new Map_Generation_Engine(create_connected_data(1, 2)).generate(state, new Map_Generation_Options()
+    {
+      Depth = 1,
+      Seed = 42
+    });
+
+    CollectionAssert.AreEqual(
+      new int[]
+      {
+        1, 1, 1, 2, 1, 2,
+        2, 1, 2, 1, 1, 1,
+        2, 1, 2, 1, 2, 1,
+        2, 1, 1, 1, 1, 2,
+        1, 1, 2, 2, 1, 2
+      },
+      tiles_row_major(state));
+  }
+
+  [TestMethod]
+  public void IdenticalAliasIndexPreservesOrderingAndSeededOutput()
+  {
+    Map_State state = blank_state(8, 1);
+
+    new Map_Generation_Engine(create_alias_data()).generate(state, new Map_Generation_Options()
+    {
+      Depth = 1,
+      Seed = 77
+    });
+
+    CollectionAssert.AreEqual(new int[] { 1, 1, 3, 3, 2, 3, 3, 1 }, tiles_row_major(state));
+  }
+
+  [TestMethod]
   public void GenerateWithAllCellsDrawnAndLockedIsNoOp()
   {
     Map_State state = new Map_State(
@@ -141,6 +178,29 @@ public sealed class MapGenerationEngineTests
   }
 
   [TestMethod]
+  public void NegativeTerrainConstraintExcludesForbiddenCandidates()
+  {
+    Tileset_Generation_Data data = create_connected_data(1, 2);
+    Data_Tileset metadata = new Data_Tileset()
+    {
+      Terrain_Tags = new List<int>() { 0, 1, 2 }
+    };
+    Map_State state = blank_state(3, 3);
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+        state.Terrain[x, y] = -1;
+    }
+
+    new Map_Generation_Engine(data, metadata).generate(state, new Map_Generation_Options()
+    {
+      Seed = 8
+    });
+
+    assert_all_tiles(state, 2);
+  }
+
+  [TestMethod]
   public void RepairPreservesLockedCellsAndFillsHole()
   {
     int[,] tiles = new int[3, 1]
@@ -176,6 +236,49 @@ public sealed class MapGenerationEngineTests
     Assert.AreEqual(1, state.Tiles[0, 0]);
     Assert.IsTrue(state.Locked[0, 0]);
     assert_all_tiles(state, 1);
+  }
+
+  [TestMethod]
+  public void RepairPreservesLockedTerrainIncompatibleCell()
+  {
+    Data_Tileset metadata = new Data_Tileset()
+    {
+      Terrain_Tags = new List<int>() { 0, 1 }
+    };
+    Map_State state = new Map_State(
+      new int[2, 1]
+      {
+        { 1 },
+        { 1 }
+      },
+      filled_bool_array(2, 1, true),
+      new bool[2, 1]
+      {
+        { true },
+        { false }
+      },
+      new int[2, 1]
+      {
+        { 2 },
+        { 2 }
+      });
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_uniform_data(1), metadata).repair(
+      state,
+      new Map_Repair_Options()
+      {
+        Radius = 0,
+        Depth = 1,
+        Seed = 15
+      });
+
+    Assert.AreEqual(1, result.Unresolved_Tile_Count);
+    Assert.AreEqual(1, state.Tiles[0, 0]);
+    Assert.IsTrue(state.Drawn[0, 0]);
+    Assert.IsTrue(state.Locked[0, 0]);
+    Assert.AreEqual(0, state.Tiles[1, 0]);
+    Assert.IsTrue(state.Drawn[1, 0]);
+    Assert.IsFalse(state.Locked[1, 0]);
   }
 
   [TestMethod]
@@ -237,6 +340,34 @@ public sealed class MapGenerationEngineTests
     Assert.IsTrue(state.Drawn[0, 0]);
     Assert.IsTrue(state.Drawn[1, 0]);
     Assert.IsTrue(state.Tiles[0, 0] == 0 || state.Tiles[1, 0] == 0);
+  }
+
+  [TestMethod]
+  public void DepthTwoLookaheadAvoidsDepthOneDeadEnd()
+  {
+    Map_State depth_one = depth_fixture_state();
+    Map_State depth_two = depth_fixture_state();
+
+    Map_Generation_Result depth_one_result = new Map_Generation_Engine(create_depth_fixture_data()).generate(
+      depth_one,
+      new Map_Generation_Options()
+      {
+        Depth = 1,
+        Seed = 0
+      });
+    Map_Generation_Result depth_two_result = new Map_Generation_Engine(create_depth_fixture_data()).generate(
+      depth_two,
+      new Map_Generation_Options()
+      {
+        Depth = 2,
+        Seed = 0
+      });
+
+    Assert.AreEqual(2, depth_one_result.Unresolved_Tile_Count);
+    CollectionAssert.AreEqual(new int[] { 1, 2, 0, 0 }, tiles_row_major(depth_one));
+    Assert.AreEqual(0, depth_two_result.Unresolved_Tile_Count);
+    CollectionAssert.AreEqual(new int[] { 1, 3, 5, 6 }, tiles_row_major(depth_two));
+    assert_horizontal_adjacency(create_depth_fixture_data(), depth_two);
   }
 
   [TestMethod]
@@ -313,6 +444,51 @@ public sealed class MapGenerationEngineTests
     return data;
   }
 
+  private static Tileset_Generation_Data create_alias_data()
+  {
+    Tile_Matching_Data matching = new Tile_Matching_Data(new HashSet<Tile_Directions>()
+    {
+      Tile_Directions.Center
+    });
+    matching.add(Tile_Directions.Center, new List<short>() { 1, 2, 3 });
+    matching.refresh_identical(4);
+    Tileset_Generation_Data data = new Tileset_Generation_Data(4, matching);
+    Tile_Data tile_data = new Tile_Data();
+    foreach (byte direction in new byte[] { 2, 4, 6, 8 })
+      tile_data.Valid_Tile_Priority[direction][1] = 1;
+    data.generation_data[1] = tile_data;
+    return data;
+  }
+
+  private static Map_State depth_fixture_state()
+  {
+    Map_State state = blank_state(4, 1);
+    state.Tiles[0, 0] = 1;
+    state.Drawn[0, 0] = true;
+    state.Locked[0, 0] = true;
+    return state;
+  }
+
+  private static Tileset_Generation_Data create_depth_fixture_data()
+  {
+    Tileset_Generation_Data data = create_generation_data();
+    data.generation_data[1] = create_tile_data((6, 2, 100), (6, 3, 1));
+    data.generation_data[2] = create_tile_data((4, 1, 1), (6, 4, 1));
+    data.generation_data[3] = create_tile_data((4, 1, 1), (6, 5, 1));
+    data.generation_data[4] = create_tile_data((4, 2, 1));
+    data.generation_data[5] = create_tile_data((4, 3, 1), (6, 6, 1));
+    data.generation_data[6] = create_tile_data((4, 5, 1));
+    return data;
+  }
+
+  private static Tile_Data create_tile_data(params (byte Direction, short Tile, short Weight)[] edges)
+  {
+    Tile_Data data = new Tile_Data();
+    foreach ((byte direction, short tile, short weight) in edges)
+      data.Valid_Tile_Priority[direction][tile] = weight;
+    return data;
+  }
+
   private static Tileset_Generation_Data create_connected_data(params short[] tiles)
   {
     Tileset_Generation_Data data = create_generation_data();
@@ -345,6 +521,28 @@ public sealed class MapGenerationEngineTests
         result[x, y] = value;
     }
     return result;
+  }
+
+  private static int[] tiles_row_major(Map_State state)
+  {
+    List<int> result = new List<int>();
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+        result.Add(state.Tiles[x, y]);
+    }
+    return result.ToArray();
+  }
+
+  private static void assert_horizontal_adjacency(Tileset_Generation_Data data, Map_State state)
+  {
+    for (int x = 0; x + 1 < state.Width; ++x)
+    {
+      short left = (short) state.Tiles[x, 0];
+      short right = (short) state.Tiles[x + 1, 0];
+      Assert.IsTrue(data.generation_data[left].Valid_Tile_Priority[(byte) 6].ContainsKey(right));
+      Assert.IsTrue(data.generation_data[right].Valid_Tile_Priority[(byte) 4].ContainsKey(left));
+    }
   }
 
   private static void assert_all_tiles(Map_State state, int expected)

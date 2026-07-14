@@ -161,7 +161,9 @@ label_55:;
             }
             return false;
           }));
-          dictionary2.Add(new Tuple<byte, short, short>(keyValuePair.Key.Item1, group_keys[i], group_keys[j]), keyValuePair.Value);
+          Tuple<byte, short, short> remapped_key = new Tuple<byte, short, short>(keyValuePair.Key.Item1, group_keys[i], group_keys[j]);
+          if (!dictionary2.ContainsKey(remapped_key))
+          dictionary2.Add(remapped_key, keyValuePair.Value);
           source.Remove(keyValuePair.Key);
         }
       }

@@ -34,4 +34,28 @@ public sealed class TileDataTests
     foreach (byte direction in new byte[4] { 2, 4, 6, 8 })
       CollectionAssert.AreEquivalent(expected.Valid_Tile_Priority[direction].ToArray(), actual.Valid_Tile_Priority[direction].ToArray());
   }
+
+  [TestMethod]
+  public void AdjacencyWeightIncrementSaturatesAtInt16Maximum()
+  {
+    Tile_Data expected = new Tile_Data();
+    for (int i = 0; i < short.MaxValue + 1000; ++i)
+      expected.increment_valid_tile_priority((byte) 6, (short) 23);
+
+    Assert.AreEqual(short.MaxValue, expected.Valid_Tile_Priority[(byte) 6][(short) 23]);
+    Assert.IsGreaterThan((short) 0, expected.Valid_Tile_Priority[(byte) 6][(short) 23]);
+
+    byte[] serialized;
+    using (MemoryStream stream = new MemoryStream())
+    {
+      using (BinaryWriter writer = new BinaryWriter(stream, Encoding.UTF8, true))
+        expected.write(writer);
+      serialized = stream.ToArray();
+    }
+
+    using MemoryStream read_stream = new MemoryStream(serialized);
+    using BinaryReader reader = new BinaryReader(read_stream);
+    Tile_Data actual = Tile_Data.read(reader);
+    Assert.AreEqual(short.MaxValue, actual.Valid_Tile_Priority[(byte) 6][(short) 23]);
+  }
 }

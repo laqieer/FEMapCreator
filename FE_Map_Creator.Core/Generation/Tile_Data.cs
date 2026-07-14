@@ -57,6 +57,21 @@ public class Tile_Data
   {
   }
 
+  public void increment_valid_tile_priority(byte direction, short tile)
+  {
+    if (!this.Valid_Tile_Priority.TryGetValue(direction, out Dictionary<short, short> priorities))
+      throw new ArgumentOutOfRangeException(nameof(direction), direction, "Direction must be 2, 4, 6, or 8.");
+    if (!priorities.TryGetValue(tile, out short priority))
+    {
+      priorities[tile] = 1;
+      return;
+    }
+    if (priority <= 0)
+      throw new InvalidOperationException($"Adjacency weight for direction {direction}, tile {tile} must be positive.");
+    if (priority < short.MaxValue)
+      priorities[tile] = (short) (priority + 1);
+  }
+
   public Tile_Data(Tile_Data source)
   {
     this.Priority = source.Priority;
