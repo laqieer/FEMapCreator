@@ -1,6 +1,8 @@
 using System;
+using System.Buffers.Binary;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Xml.Linq;
 
@@ -139,13 +141,9 @@ public sealed class Tmx_Map_Codec : IMap_Codec
     XElement data = layer.Elements().FirstOrDefault(element => element.Name.LocalName == "data");
     if (data == null)
       throw new InvalidDataException("TMX layer is missing its data element.");
-    if (data.Attribute("encoding") != null || data.Attribute("compression") != null)
-      throw new NotSupportedException("Only explicit <tile gid=\"...\"/> TMX layer data is supported.");
-    XElement[] tile_elements = data.Elements().Where(element => element.Name.LocalName == "tile").ToArray();
     int expected = checked(layer_width * layer_height);
-    if (tile_elements.Length != expected)
-      throw new InvalidDataException($"TMX layer contains {tile_elements.Length} tile elements; expected {expected}.");
-    for (int index = 0; index < tile_elements.Length; ++index)
+    uint[] gids = read_layer_gids(data, expected);
+    for (int index = 0; index < gids.Length; ++index)
     {
       int x = index % layer_width;
       int y = index / layer_width;
@@ -154,13 +152,149 @@ public sealed class Tmx_Map_Codec : IMap_Codec
       {
         continue;
       }
-      string gid_text = tile_elements[index].Attribute("gid")?.Value;
-      if (!int.TryParse(gid_text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int gid) || gid < 0)
-        throw new InvalidDataException($"TMX tile {index} has an invalid gid.");
-      int tile = gid - first_gid;
-      if (tile >= 0)
-        tiles[x, y] = tile;
+      uint gid = gids[index];
+      if (gid == 0 || gid < first_gid)
+        continue;
+      uint tile = gid - (uint) first_gid;
+      if (tile > int.MaxValue)
+        throw new InvalidDataException($"TMX tile {index} gid {gid} is outside the supported tile index range.");
+      tiles[x, y] = (int) tile;
     }
+  }
+
+  private static uint[] read_layer_gids(XElement data, int expected)
+  {
+    string encoding = data.Attribute("encoding")?.Value?.Trim();
+    string compression = data.Attribute("compression")?.Value?.Trim();
+    if (string.IsNullOrEmpty(encoding))
+    {
+      if (data.Attribute("compression") != null)
+        throw unsupported_data_encoding("explicit tile elements", compression);
+      return read_explicit_gids(data, expected);
+    }
+    if (string.Equals(encoding, "csv", StringComparison.OrdinalIgnoreCase))
+    {
+      if (data.Attribute("compression") != null)
+        throw unsupported_data_encoding(encoding, compression);
+      return read_csv_gids(data, expected);
+    }
+    if (string.Equals(encoding, "base64", StringComparison.OrdinalIgnoreCase))
+      return read_base64_gids(data, compression, expected);
+    throw new NotSupportedException($"TMX layer encoding \"{encoding}\" is not supported.");
+  }
+
+  private static uint[] read_explicit_gids(XElement data, int expected)
+  {
+    XElement[] tile_elements = data.Elements().Where(element => element.Name.LocalName == "tile").ToArray();
+    if (tile_elements.Length != expected)
+      throw new InvalidDataException($"TMX layer contains {tile_elements.Length} tile elements; expected {expected}.");
+    uint[] gids = new uint[expected];
+    for (int index = 0; index < tile_elements.Length; ++index)
+    {
+      string gid_text = tile_elements[index].Attribute("gid")?.Value;
+      if (!uint.TryParse(gid_text, NumberStyles.Integer, CultureInfo.InvariantCulture, out gids[index]))
+        throw new InvalidDataException($"TMX tile {index} has an invalid gid.");
+    }
+    return gids;
+  }
+
+  private static uint[] read_csv_gids(XElement data, int expected)
+  {
+    string[] values = data.Value.Split(',');
+    if (values.Length != expected)
+      throw new InvalidDataException($"TMX layer CSV data contains {values.Length} gids; expected {expected}.");
+    uint[] gids = new uint[expected];
+    for (int index = 0; index < values.Length; ++index)
+    {
+      if (!uint.TryParse(values[index].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out gids[index]))
+        throw new InvalidDataException($"TMX layer CSV gid {index} is invalid.");
+    }
+    return gids;
+  }
+
+  private static uint[] read_base64_gids(XElement data, string compression, int expected)
+  {
+    byte[] encoded;
+    try
+    {
+      encoded = Convert.FromBase64String(data.Value);
+    }
+    catch (FormatException ex)
+    {
+      throw new InvalidDataException("TMX layer base64 data is invalid.", ex);
+    }
+
+    int expected_bytes = checked(expected * sizeof (uint));
+    byte[] bytes;
+    if (string.IsNullOrEmpty(compression))
+    {
+      bytes = encoded;
+    }
+    else if (string.Equals(compression, "gzip", StringComparison.OrdinalIgnoreCase))
+    {
+      bytes = decompress(encoded, expected_bytes, compression, stream => new GZipStream(stream, CompressionMode.Decompress));
+    }
+    else if (string.Equals(compression, "zlib", StringComparison.OrdinalIgnoreCase))
+    {
+      bytes = decompress(encoded, expected_bytes, compression, stream => new ZLibStream(stream, CompressionMode.Decompress));
+    }
+    else
+    {
+      throw unsupported_data_encoding("base64", compression);
+    }
+
+    if (bytes.Length != expected_bytes)
+    {
+      throw new InvalidDataException(
+        $"TMX layer base64 data contains {bytes.Length} bytes; expected {expected_bytes} for {expected} gids.");
+    }
+    uint[] gids = new uint[expected];
+    for (int index = 0; index < expected; ++index)
+      gids[index] = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(index * sizeof (uint), sizeof (uint)));
+    return gids;
+  }
+
+  private static byte[] decompress(
+    byte[] encoded,
+    int expected_bytes,
+    string compression,
+    Func<Stream, Stream> create_stream)
+  {
+    try
+    {
+      using MemoryStream input = new MemoryStream(encoded, false);
+      using Stream compressed = create_stream(input);
+      byte[] bytes = new byte[expected_bytes];
+      int length = 0;
+      while (length < bytes.Length)
+      {
+        int read = compressed.Read(bytes, length, bytes.Length - length);
+        if (read == 0)
+          break;
+        length += read;
+      }
+      if (length != expected_bytes)
+      {
+        throw new InvalidDataException(
+          $"TMX layer base64 data with {compression} compression contains {length} decompressed bytes; expected {expected_bytes}.");
+      }
+      if (compressed.ReadByte() != -1)
+      {
+        throw new InvalidDataException(
+          $"TMX layer base64 data with {compression} compression contains more than {expected_bytes} decompressed bytes.");
+      }
+      return bytes;
+    }
+    catch (InvalidDataException ex) when (!ex.Message.StartsWith("TMX layer", StringComparison.Ordinal))
+    {
+      throw new InvalidDataException($"TMX layer base64 data with {compression} compression is invalid.", ex);
+    }
+  }
+
+  private static NotSupportedException unsupported_data_encoding(string encoding, string compression)
+  {
+    return new NotSupportedException(
+      $"TMX layer encoding \"{encoding}\" with compression \"{compression ?? ""}\" is not supported.");
   }
 
   private static int required_positive_int(XElement element, string attribute, string context)

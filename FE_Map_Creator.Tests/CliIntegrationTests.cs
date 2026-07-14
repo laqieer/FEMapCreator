@@ -130,6 +130,33 @@ public sealed class CliIntegrationTests
   }
 
   [TestMethod]
+  public async Task RepairReadsCsvTmxInput()
+  {
+    using Cli_Temporary_Directory directory = new Cli_Temporary_Directory();
+    string input = directory.path("input.tmx");
+    string output = directory.path("output.map");
+    File.WriteAllText(input,
+      """
+      <map orientation="orthogonal" width="1" height="1">
+        <tileset firstgid="7" name="01020304"><image source="FE6 - Fields - 01020304.png"/></tileset>
+        <layer width="1" height="1"><data encoding="csv">8</data></layer>
+      </map>
+      """);
+
+    Cli_Process_Result result = await run_cli_async(
+      "repair",
+      "--input", input,
+      "--output", output,
+      "--seed", "12345");
+
+    assert_success(result);
+    Map_Document document = new Text_Map_Codec().read(output);
+    Assert.AreEqual(1, document.Width);
+    Assert.AreEqual(1, document.Height);
+    Assert.AreEqual(1, document.Tiles[0, 0]);
+  }
+
+  [TestMethod]
   public async Task RepairProtectsExistingOutputsAndSupportsForceAndInPlace()
   {
     using Cli_Temporary_Directory directory = new Cli_Temporary_Directory();
@@ -289,7 +316,7 @@ public sealed class CliIntegrationTests
     using Cli_Temporary_Directory directory = new Cli_Temporary_Directory();
     string map = directory.path("map.map");
     string mar = directory.path("map.mar");
-    string csv_tmx = directory.path("csv.tmx");
+    string zstd_tmx = directory.path("zstd.tmx");
 
     Cli_Process_Result seed_map = await run_cli_async(
       "generate",
@@ -308,11 +335,13 @@ public sealed class CliIntegrationTests
     assert_success(seed_map);
     assert_success(seed_mar);
 
-    File.WriteAllText(csv_tmx,
+    File.WriteAllText(zstd_tmx,
       """
       <map orientation="orthogonal" width="1" height="1">
         <tileset firstgid="1" name="test"><image source="test.png"/></tileset>
-        <layer width="1" height="1"><data encoding="csv">1</data></layer>
+        <layer width="1" height="1">
+          <data encoding="base64" compression="zstd">AQAAAA==</data>
+        </layer>
       </map>
       """);
 
@@ -340,16 +369,16 @@ public sealed class CliIntegrationTests
       "repair",
       "--input", mar,
       "--output", directory.path("repaired.mar"));
-    Cli_Process_Result unsupported_csv_tmx = await run_cli_async(
+    Cli_Process_Result unsupported_zstd_tmx = await run_cli_async(
       "repair",
-      "--input", csv_tmx,
+      "--input", zstd_tmx,
       "--output", directory.path("out.tmx"));
 
     assert_error(invalid_depth, "--depth must be 1 or 2.");
     assert_error(invalid_radius, "--repair-radius must be zero or greater.");
     assert_error(conflicting_flags, "--allow-incomplete and --require-complete cannot both be specified.");
     assert_error(missing_mar_metadata, "MAR input requires positive width and height metadata.");
-    assert_error(unsupported_csv_tmx, "Only explicit <tile gid=\"...\"/> TMX layer data is supported.");
+    assert_error(unsupported_zstd_tmx, "encoding \"base64\" with compression \"zstd\" is not supported.");
   }
 
   private static async Task<Cli_Process_Result> run_cli_async(params string[] arguments)

@@ -195,7 +195,7 @@ public sealed class MapCodecTests
   }
 
   [TestMethod]
-  public void TmxReaderRejectsCsvData()
+  public void TmxReaderDecodesCsvWithOffsetsAndEmptyGids()
   {
     string directory = create_temp_directory();
     try
@@ -203,13 +203,35 @@ public sealed class MapCodecTests
       string filename = Path.Combine(directory, "csv.tmx");
       File.WriteAllText(filename,
         """
-        <map orientation="orthogonal" width="1" height="1">
-          <tileset firstgid="1" name="test"><image source="test.png"/></tileset>
-          <layer width="1" height="1"><data encoding="csv">1</data></layer>
+        <map orientation="orthogonal" width="3" height="2">
+          <tileset firstgid="7" name="test"><image source="test.png"/></tileset>
+          <layer width="3" height="2">
+            <properties>
+              <property name="X" value="1"/>
+              <property name="Y" value="0"/>
+              <property name="Width" value="2"/>
+              <property name="Height" value="2"/>
+            </properties>
+            <data encoding="csv">
+              7, 8, 9,
+              10, 0, 12
+            </data>
+          </layer>
         </map>
         """);
 
-      Assert.Throws<NotSupportedException>(() => new Tmx_Map_Codec().read(filename));
+      Map_Document actual = new Tmx_Map_Codec().read(filename);
+
+      assert_document(new Map_Document(new int[,]
+      {
+        { 0, 0 },
+        { 1, 0 },
+        { 2, 5 }
+      }, "test")
+      {
+        Tileset_Image_Source = "test.png"
+      }, actual);
+      Assert.AreEqual("test.png", actual.Tileset_Image_Source);
     }
     finally
     {
@@ -218,7 +240,7 @@ public sealed class MapCodecTests
   }
 
   [TestMethod]
-  public void TmxReaderRejectsBase64Data()
+  public void TmxReaderDecodesUncompressedBase64()
   {
     string directory = create_temp_directory();
     try
@@ -226,13 +248,139 @@ public sealed class MapCodecTests
       string filename = Path.Combine(directory, "base64.tmx");
       File.WriteAllText(filename,
         """
-        <map orientation="orthogonal" width="1" height="1">
-          <tileset firstgid="1" name="test"><image source="test.png"/></tileset>
-          <layer width="1" height="1"><data encoding="base64">AQAAAA==</data></layer>
+        <map orientation="orthogonal" width="2" height="2">
+          <tileset firstgid="7" name="test"><image source="test.png"/></tileset>
+          <layer width="2" height="2">
+            <data encoding="base64">
+              AAAAAAcAAAAIAAAACgAAAA==
+            </data>
+          </layer>
         </map>
         """);
 
-      Assert.Throws<NotSupportedException>(() => new Tmx_Map_Codec().read(filename));
+      assert_tmx_fixture(new Tmx_Map_Codec().read(filename));
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [TestMethod]
+  [DataRow("gzip", "H4sIAAAAAAACCmNgYGBgB2IOIOYCYgALWXskEAAAAA==")]
+  [DataRow("zlib", "eJxjYGBgYAdiDiDmAmIAAMwAGg==")]
+  public void TmxReaderDecodesCompressedBase64Fixtures(string compression, string fixture)
+  {
+    string directory = create_temp_directory();
+    try
+    {
+      string filename = Path.Combine(directory, $"{compression}.tmx");
+      File.WriteAllText(filename,
+        $"""
+        <map orientation="orthogonal" width="2" height="2">
+          <tileset firstgid="7" name="test"><image source="test.png"/></tileset>
+          <layer width="2" height="2">
+            <data encoding="base64" compression="{compression}">
+              {fixture}
+            </data>
+          </layer>
+        </map>
+        """);
+
+      assert_tmx_fixture(new Tmx_Map_Codec().read(filename));
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [TestMethod]
+  [DataRow("csv", "1,invalid", "CSV gid 1 is invalid")]
+  [DataRow("csv", "1", "CSV data contains 1 gids; expected 2")]
+  [DataRow("base64", "not base64!", "base64 data is invalid")]
+  [DataRow("base64", "AQAAAA==", "base64 data contains 4 bytes; expected 8")]
+  public void TmxReaderRejectsMalformedEncodedData(string encoding, string data, string expected_error)
+  {
+    string directory = create_temp_directory();
+    try
+    {
+      string filename = Path.Combine(directory, "malformed.tmx");
+      File.WriteAllText(filename,
+        $"""
+        <map orientation="orthogonal" width="2" height="1">
+          <tileset firstgid="1" name="test"><image source="test.png"/></tileset>
+          <layer width="2" height="1"><data encoding="{encoding}">{data}</data></layer>
+        </map>
+        """);
+
+      InvalidDataException exception =
+        Assert.Throws<InvalidDataException>(() => new Tmx_Map_Codec().read(filename));
+
+      StringAssert.Contains(exception.Message, expected_error);
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [TestMethod]
+  public void TmxReaderRejectsMalformedCompressedBase64()
+  {
+    string directory = create_temp_directory();
+    try
+    {
+      string filename = Path.Combine(directory, "malformed-gzip.tmx");
+      File.WriteAllText(filename,
+        """
+        <map orientation="orthogonal" width="1" height="1">
+          <tileset firstgid="1" name="test"><image source="test.png"/></tileset>
+          <layer width="1" height="1">
+            <data encoding="base64" compression="gzip">AQAAAA==</data>
+          </layer>
+        </map>
+        """);
+
+      InvalidDataException exception =
+        Assert.Throws<InvalidDataException>(() => new Tmx_Map_Codec().read(filename));
+
+      StringAssert.Contains(exception.Message, "base64 data with gzip compression is invalid");
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [TestMethod]
+  [DataRow("json", null, "TMX layer encoding \"json\" is not supported")]
+  [DataRow("base64", "zstd", "encoding \"base64\" with compression \"zstd\" is not supported")]
+  [DataRow("csv", "gzip", "encoding \"csv\" with compression \"gzip\" is not supported")]
+  public void TmxReaderRejectsUnsupportedEncodingOrCompression(
+    string encoding,
+    string compression,
+    string expected_error)
+  {
+    string directory = create_temp_directory();
+    try
+    {
+      string filename = Path.Combine(directory, "unsupported.tmx");
+      string compression_attribute = compression == null ? "" : $" compression=\"{compression}\"";
+      File.WriteAllText(filename,
+        $"""
+        <map orientation="orthogonal" width="1" height="1">
+          <tileset firstgid="1" name="test"><image source="test.png"/></tileset>
+          <layer width="1" height="1">
+            <data encoding="{encoding}"{compression_attribute}>AQAAAA==</data>
+          </layer>
+        </map>
+        """);
+
+      NotSupportedException exception =
+        Assert.Throws<NotSupportedException>(() => new Tmx_Map_Codec().read(filename));
+
+      StringAssert.Contains(exception.Message, expected_error);
     }
     finally
     {
@@ -283,6 +431,16 @@ public sealed class MapCodecTests
       { -1024, 1023 },
       { -1, 0 }
     }, "01020304");
+  }
+
+  private static void assert_tmx_fixture(Map_Document actual)
+  {
+    assert_document(new Map_Document(new int[,]
+    {
+      { 0, 1 },
+      { 0, 3 }
+    }, "test"), actual);
+    Assert.AreEqual("test.png", actual.Tileset_Image_Source);
   }
 
   private static void assert_document(Map_Document expected, Map_Document actual)
