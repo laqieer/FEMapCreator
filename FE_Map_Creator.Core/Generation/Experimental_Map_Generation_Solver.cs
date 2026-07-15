@@ -27,7 +27,6 @@ internal sealed class Experimental_Map_Generation_Solver
     Map_State state,
     int depth,
     int search_node_limit,
-    Random random,
     int seed,
     CancellationToken cancellation_token,
     Tile_Drawn_Callback tile_drawn,
@@ -39,7 +38,6 @@ internal sealed class Experimental_Map_Generation_Solver
       working,
       depth,
       search_node_limit,
-      random,
       seed,
       cancellation_token,
       tile_drawn,
@@ -51,7 +49,6 @@ internal sealed class Experimental_Map_Generation_Solver
     int depth,
     int radius,
     int search_node_limit,
-    Random random,
     int seed,
     CancellationToken cancellation_token,
     Tile_Drawn_Callback tile_drawn,
@@ -65,7 +62,6 @@ internal sealed class Experimental_Map_Generation_Solver
       working,
       depth,
       search_node_limit,
-      random,
       seed,
       cancellation_token,
       tile_drawn,
@@ -77,39 +73,90 @@ internal sealed class Experimental_Map_Generation_Solver
     Map_State working,
     int depth,
     int search_node_limit,
-    Random random,
     int seed,
     CancellationToken cancellation_token,
     Tile_Drawn_Callback tile_drawn,
     IProgress<int> progress)
   {
-    Search search = new Search(
-      this._model,
-      working,
-      depth,
-      search_node_limit,
-      random,
-      cancellation_token,
-      progress);
-    Search_Result search_result = search.solve();
+    List<Cell[]> components = collect_components(working, cancellation_token);
+    long[] component_scores = this.calculate_component_scores(working, components);
+    int remaining_budget = search_node_limit;
+    Search_Result[] search_results = new Search_Result[components.Count];
+    int[] component_node_limits = new int[components.Count];
+    int[] component_node_counts = new int[components.Count];
+    int[] component_propagation_removals = new int[components.Count];
     List<Cell> unresolved = new List<Cell>();
-
-    for (int variable = 0; variable < search_result.Cells.Length; ++variable)
+    int progress_offset = 0;
+    int[] solve_order = Enumerable.Range(0, components.Count)
+      .OrderBy(index => component_scores[index])
+      .ThenBy(index => index)
+      .ToArray();
+    for (int order_index = 0; order_index < solve_order.Length; ++order_index)
     {
-      Cell cell = search_result.Cells[variable];
-      int candidate = search_result.Assignments[variable];
-      if (candidate < 0)
-      {
-        working.Tiles[cell.X, cell.Y] = 0;
-        working.Drawn[cell.X, cell.Y] = false;
-        unresolved.Add(cell);
-      }
-      else
-      {
-        working.Tiles[cell.X, cell.Y] = this._model.pick_alias(candidate, working.Terrain[cell.X, cell.Y], random);
-        working.Drawn[cell.X, cell.Y] = true;
-      }
+      cancellation_token.ThrowIfCancellationRequested();
+      int component_index = solve_order[order_index];
+      Cell[] component = components[component_index];
+      int component_budget = remaining_budget;
+      Random component_random = new Random(derive_seed(seed, component_index));
+      Search search = new Search(
+        this._model,
+        working,
+        component,
+        depth,
+        component_budget,
+        component_random,
+        cancellation_token,
+        progress == null ? null : new Component_Progress(progress, progress_offset));
+      Search_Result search_result = search.solve();
+      search_results[component_index] = search_result;
+      component_node_limits[component_index] += component_budget;
+      component_node_counts[component_index] += search_result.Search_Node_Count;
+      component_propagation_removals[component_index] += search_result.Propagation_Removal_Count;
+      remaining_budget -= search_result.Search_Node_Count;
+      progress_offset += component.Length;
+      progress?.Report(progress_offset);
     }
+
+    Map_Generation_Component_Result[] component_results =
+      new Map_Generation_Component_Result[components.Count];
+    int search_node_count = component_node_counts.Sum();
+    int propagation_removal_count = component_propagation_removals.Sum();
+    for (int component_index = 0; component_index < components.Count; ++component_index)
+    {
+      Search_Result search_result = search_results[component_index];
+      Cell[] component = components[component_index];
+      Random alias_random = new Random(derive_seed(seed, component_index + components.Count));
+      int component_unresolved = 0;
+      for (int variable = 0; variable < search_result.Cells.Length; ++variable)
+      {
+        Cell cell = search_result.Cells[variable];
+        int candidate = search_result.Assignments[variable];
+        if (candidate < 0)
+        {
+          working.Tiles[cell.X, cell.Y] = 0;
+          working.Drawn[cell.X, cell.Y] = false;
+          unresolved.Add(cell);
+          ++component_unresolved;
+        }
+        else
+        {
+          working.Tiles[cell.X, cell.Y] =
+            this._model.pick_alias(candidate, working.Terrain[cell.X, cell.Y], alias_random);
+          working.Drawn[cell.X, cell.Y] = true;
+        }
+      }
+      bool component_exhausted = search_result.Search_Budget_Exhausted;
+      component_results[component_index] = new Map_Generation_Component_Result(
+        component[0],
+        component.Length,
+        component_unresolved,
+        component_node_limits[component_index],
+        component_node_counts[component_index],
+        component_exhausted,
+        component_propagation_removals[component_index]);
+    }
+    bool search_budget_exhausted =
+      search_results.Any(result => result.Search_Budget_Exhausted);
 
     cancellation_token.ThrowIfCancellationRequested();
     for (int y = 0; y < destination.Height; ++y)
@@ -130,8 +177,79 @@ internal sealed class Experimental_Map_Generation_Solver
       seed,
       Map_Generation_Algorithm.Experimental_Constraint,
       unresolved,
-      search_result.Search_Budget_Exhausted,
-      search_result.Search_Node_Count);
+      search_budget_exhausted,
+      search_node_count,
+      propagation_removal_count,
+      component_results);
+  }
+
+  private static List<Cell[]> collect_components(
+    Map_State state,
+    CancellationToken cancellation_token)
+  {
+    bool[,] visited = new bool[state.Width, state.Height];
+    List<Cell[]> components = new List<Cell[]>();
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+      {
+        if (visited[x, y] || state.Drawn[x, y] || state.Locked[x, y])
+          continue;
+        List<Cell> component = new List<Cell>();
+        Queue<Cell> queue = new Queue<Cell>();
+        queue.Enqueue(new Cell(x, y));
+        visited[x, y] = true;
+        while (queue.Count > 0)
+        {
+          cancellation_token.ThrowIfCancellationRequested();
+          Cell cell = queue.Dequeue();
+          component.Add(cell);
+          foreach (byte direction in Directions)
+          {
+            Cell neighbor = neighbor_cell(cell, direction);
+            if (state.is_off_map(neighbor.X, neighbor.Y)
+              || visited[neighbor.X, neighbor.Y]
+              || state.Drawn[neighbor.X, neighbor.Y]
+              || state.Locked[neighbor.X, neighbor.Y])
+              continue;
+            visited[neighbor.X, neighbor.Y] = true;
+            queue.Enqueue(neighbor);
+          }
+        }
+        component.Sort((left, right) =>
+          (left.X + left.Y * state.Width).CompareTo(right.X + right.Y * state.Width));
+        components.Add(component.ToArray());
+      }
+    }
+    components.Sort((left, right) =>
+      (left[0].X + left[0].Y * state.Width).CompareTo(right[0].X + right[0].Y * state.Width));
+    return components;
+  }
+
+  private long[] calculate_component_scores(
+    Map_State state,
+    IReadOnlyList<Cell[]> components)
+  {
+    long[] scores = new long[components.Count];
+    for (int component = 0; component < components.Count; ++component)
+    {
+      long score = 0;
+      foreach (Cell cell in components[component])
+        score += Math.Max(1, this._model.terrain_candidate_count(state.Terrain[cell.X, cell.Y]));
+      scores[component] = Math.Max(1, score);
+    }
+    return scores;
+  }
+
+  private static int derive_seed(int seed, int component_index)
+  {
+    ulong value = (uint) seed + 0x9E3779B97F4A7C15UL * (ulong) (component_index + 1);
+    value ^= value >> 30;
+    value *= 0xBF58476D1CE4E5B9UL;
+    value ^= value >> 27;
+    value *= 0x94D049BB133111EBUL;
+    value ^= value >> 31;
+    return unchecked((int) (uint) value);
   }
 
   private void resolve_terrain_incompatible_cells(Map_State state)
@@ -219,7 +337,7 @@ internal sealed class Experimental_Map_Generation_Solver
     private readonly CancellationToken _cancellation_token;
     private readonly IProgress<int> _progress;
     private readonly Cell[] _cells;
-    private readonly int[,] _variable_at;
+    private readonly Dictionary<int, int> _variable_at = new Dictionary<int, int>();
     private readonly ulong[][] _domains;
     private readonly int[] _domain_counts;
     private readonly int[] _assignments;
@@ -234,10 +352,12 @@ internal sealed class Experimental_Map_Generation_Solver
     private int _zero_domain_unassigned;
     private int _search_node_count;
     private bool _search_budget_exhausted;
+    private int _propagation_removal_count;
 
     internal Search(
       Experimental_Tile_Model model,
       Map_State state,
+      Cell[] cells,
       int depth,
       int search_node_limit,
       Random random,
@@ -252,24 +372,12 @@ internal sealed class Experimental_Map_Generation_Solver
       this._cancellation_token = cancellation_token;
       this._progress = progress;
 
-      List<Cell> cells = new List<Cell>();
-      this._variable_at = new int[state.Width, state.Height];
-      for (int y = 0; y < state.Height; ++y)
+      this._cells = cells ?? throw new ArgumentNullException(nameof(cells));
+      for (int variable = 0; variable < this._cells.Length; ++variable)
       {
-        for (int x = 0; x < state.Width; ++x)
-          this._variable_at[x, y] = -1;
+        Cell cell = this._cells[variable];
+        this._variable_at.Add(cell.X + cell.Y * state.Width, variable);
       }
-      for (int y = 0; y < state.Height; ++y)
-      {
-        for (int x = 0; x < state.Width; ++x)
-        {
-          if (state.Drawn[x, y] || state.Locked[x, y])
-            continue;
-          this._variable_at[x, y] = cells.Count;
-          cells.Add(new Cell(x, y));
-        }
-      }
-      this._cells = cells.ToArray();
       this._domains = new ulong[this._cells.Length][];
       this._domain_counts = new int[this._cells.Length];
       this._assignments = Enumerable.Repeat(Unassigned, this._cells.Length).ToArray();
@@ -283,18 +391,23 @@ internal sealed class Experimental_Map_Generation_Solver
     internal Search_Result solve()
     {
       if (this._cells.Length == 0)
-        return new Search_Result(this._cells, Array.Empty<int>(), false, 0);
+        return new Search_Result(this._cells, Array.Empty<int>(), false, 0, 0);
 
       this.build_greedy_incumbent();
       if (this._best_unresolved > 0)
+        this.try_propagated_greedy_complete();
+      if (this._best_unresolved > 0 && this._search_node_limit > 0)
         this.search(0, 0);
+      else if (this._best_unresolved > 0 && this._search_node_limit == 0)
+        this._search_budget_exhausted = true;
       if (this._best_assignments == null)
         this._best_assignments = Enumerable.Repeat(Unresolved, this._cells.Length).ToArray();
       return new Search_Result(
         this._cells,
         this._best_assignments,
         this._search_budget_exhausted,
-        this._search_node_count);
+        this._search_node_count,
+        this._propagation_removal_count);
     }
 
     private void initialize_domains()
@@ -322,6 +435,144 @@ internal sealed class Experimental_Map_Generation_Solver
           this.intersect_domain(variable, this._model.allowed_neighbors(fixed_candidate, (byte) (10 - direction)), false);
         }
       }
+    }
+
+    private void try_propagated_greedy_complete()
+    {
+        int root_mark = this._trail.Count;
+        List<Greedy_Decision> decisions = new List<Greedy_Decision>();
+        bool complete = this.propagate_all_arcs();
+        while (complete)
+        {
+          this._cancellation_token.ThrowIfCancellationRequested();
+          int variable = this.select_variable();
+          if (variable < 0)
+            break;
+          bool assigned = false;
+          foreach (int candidate in this.ordered_candidates(variable))
+          {
+            int trail_mark = this._trail.Count;
+            this.assign_variable(variable, candidate);
+            this.restrict_domain_to_candidate(variable, candidate);
+            if (this.propagate_from(variable))
+            {
+              decisions.Add(new Greedy_Decision(variable, candidate, trail_mark));
+              assigned = true;
+              break;
+            }
+            this.undo_to(trail_mark);
+            this.unassign_variable(variable);
+          }
+          if (!assigned)
+            complete = false;
+        }
+        if (complete && this.select_variable() < 0)
+        {
+          this._best_unresolved = 0;
+          this._best_assignments = (int[]) this._assignments.Clone();
+        }
+        for (int index = decisions.Count - 1; index >= 0; --index)
+        {
+          Greedy_Decision decision = decisions[index];
+          this.undo_to(decision.Trail_Mark);
+          this.unassign_variable(decision.Variable);
+        }
+        this.undo_to(root_mark);
+    }
+
+    private bool propagate_all_arcs()
+    {
+        Queue<Arc> queue = new Queue<Arc>();
+        for (int variable = 0; variable < this._cells.Length; ++variable)
+        {
+          Cell cell = this._cells[variable];
+          foreach (byte direction in Directions)
+          {
+            Cell neighbor = neighbor_cell(cell, direction);
+            if (this._state.is_off_map(neighbor.X, neighbor.Y))
+              continue;
+            int target = this.variable_at(neighbor.X, neighbor.Y);
+            if (target >= 0)
+              queue.Enqueue(new Arc(variable, target, direction));
+          }
+        }
+        return this.propagate(queue);
+    }
+
+    private bool propagate_from(int variable)
+    {
+        Queue<Arc> queue = new Queue<Arc>();
+        Cell cell = this._cells[variable];
+        foreach (byte direction in Directions)
+        {
+          Cell neighbor = neighbor_cell(cell, direction);
+          if (this._state.is_off_map(neighbor.X, neighbor.Y))
+            continue;
+          int target = this.variable_at(neighbor.X, neighbor.Y);
+          if (target < 0 || this._assignments[target] == Unresolved)
+            continue;
+          queue.Enqueue(new Arc(target, variable, (byte) (10 - direction)));
+          queue.Enqueue(new Arc(variable, target, direction));
+        }
+        return this.propagate(queue);
+    }
+
+    private bool propagate(Queue<Arc> queue)
+    {
+        while (queue.Count > 0)
+        {
+          this._cancellation_token.ThrowIfCancellationRequested();
+          Arc arc = queue.Dequeue();
+          if (this._assignments[arc.Source] == Unresolved
+            || this._assignments[arc.Target] == Unresolved)
+            continue;
+          if (!this.revise(arc.Source, arc.Target, arc.Direction))
+            continue;
+          if (this._domain_counts[arc.Source] == 0)
+            return false;
+          Cell source_cell = this._cells[arc.Source];
+          foreach (byte direction in Directions)
+          {
+            Cell neighbor = neighbor_cell(source_cell, direction);
+            if (this._state.is_off_map(neighbor.X, neighbor.Y))
+              continue;
+            int neighbor_variable = this.variable_at(neighbor.X, neighbor.Y);
+            if (neighbor_variable < 0
+              || neighbor_variable == arc.Target
+              || this._assignments[neighbor_variable] == Unresolved)
+              continue;
+            queue.Enqueue(new Arc(neighbor_variable, arc.Source, (byte) (10 - direction)));
+          }
+        }
+        return true;
+    }
+
+    private bool revise(int source, int target, byte direction)
+    {
+        ulong[] supported = (ulong[]) this._domains[source].Clone();
+        bool changed = false;
+        foreach (int candidate in enumerate_candidates(this._domains[source]))
+        {
+          if (this._model.count_intersection(
+            this._domains[target],
+            this._model.allowed_neighbors(candidate, direction)) > 0)
+            continue;
+          supported[candidate / 64] &= ~(1UL << (candidate % 64));
+          changed = true;
+        }
+        if (!changed)
+          return false;
+        int old_count = this._domain_counts[source];
+        this.intersect_domain(source, supported, true);
+        this._propagation_removal_count += old_count - this._domain_counts[source];
+        return true;
+    }
+
+    private void restrict_domain_to_candidate(int variable, int candidate)
+    {
+      ulong[] singleton = new ulong[this._model.Word_Count];
+      singleton[candidate / 64] = 1UL << (candidate % 64);
+      this.intersect_domain(variable, singleton, true);
     }
 
     private void search(int assigned_count, int unresolved_count)
@@ -428,7 +679,7 @@ internal sealed class Experimental_Map_Generation_Solver
         Cell neighbor = neighbor_cell(cell, direction);
         if (this._state.is_off_map(neighbor.X, neighbor.Y))
           continue;
-        int neighbor_variable = this._variable_at[neighbor.X, neighbor.Y];
+        int neighbor_variable = this.variable_at(neighbor.X, neighbor.Y);
         if (neighbor_variable >= 0)
         {
           int assignment = this._assignments[neighbor_variable];
@@ -470,7 +721,7 @@ internal sealed class Experimental_Map_Generation_Solver
         Cell neighbor = neighbor_cell(cell, direction);
         if (this._state.is_off_map(neighbor.X, neighbor.Y))
           continue;
-        int neighbor_variable = this._variable_at[neighbor.X, neighbor.Y];
+        int neighbor_variable = this.variable_at(neighbor.X, neighbor.Y);
         if (neighbor_variable >= 0)
         {
           int neighbor_assignment = this._assignments[neighbor_variable];
@@ -502,7 +753,7 @@ internal sealed class Experimental_Map_Generation_Solver
         Cell neighbor = neighbor_cell(cell, direction);
         if (this._state.is_off_map(neighbor.X, neighbor.Y))
           continue;
-        int neighbor_variable = this._variable_at[neighbor.X, neighbor.Y];
+        int neighbor_variable = this.variable_at(neighbor.X, neighbor.Y);
         if (neighbor_variable < 0 || this._assignments[neighbor_variable] != Unassigned)
           continue;
         this.intersect_domain(neighbor_variable, this._model.allowed_neighbors(candidate, direction), true);
@@ -603,7 +854,7 @@ internal sealed class Experimental_Map_Generation_Solver
         Cell neighbor = neighbor_cell(cell, direction);
         if (this._state.is_off_map(neighbor.X, neighbor.Y))
           continue;
-        int neighbor_variable = this._variable_at[neighbor.X, neighbor.Y];
+        int neighbor_variable = this.variable_at(neighbor.X, neighbor.Y);
         if (neighbor_variable < 0 || this._assignments[neighbor_variable] != Unassigned)
           continue;
         this.remove_selection(neighbor_variable);
@@ -623,7 +874,7 @@ internal sealed class Experimental_Map_Generation_Solver
       }
       if (!priorities.TryGetValue(priority, out Indexed_Variable_Set variables))
       {
-        variables = new Indexed_Variable_Set();
+        variables = new Indexed_Variable_Set(this._cells.Length);
         priorities.Add(priority, variables);
       }
       variables.Add(variable);
@@ -658,6 +909,13 @@ internal sealed class Experimental_Map_Generation_Solver
       return candidates;
     }
 
+    private int variable_at(int x, int y)
+    {
+      return this._variable_at.TryGetValue(x + y * this._state.Width, out int variable)
+        ? variable
+        : -1;
+    }
+
     private readonly struct Domain_Change
     {
       internal int Variable { get; }
@@ -669,6 +927,20 @@ internal sealed class Experimental_Map_Generation_Solver
         this.Variable = variable;
         this.Word = word;
         this.Removed = removed;
+      }
+    }
+
+    private readonly struct Arc
+    {
+      internal int Source { get; }
+      internal int Target { get; }
+      internal byte Direction { get; }
+
+      internal Arc(int source, int target, byte direction)
+      {
+        this.Source = source;
+        this.Target = target;
+        this.Direction = direction;
       }
     }
 
@@ -700,31 +972,60 @@ internal sealed class Experimental_Map_Generation_Solver
 
     private sealed class Indexed_Variable_Set
     {
-      private readonly List<int> _variables = new List<int>();
-      private readonly Dictionary<int, int> _indices = new Dictionary<int, int>();
+      private readonly bool[] _active;
+      private readonly int[] _tree;
 
-      internal int Count => this._variables.Count;
+      internal int Count { get; private set; }
 
-      internal int this[int index] => this._variables[index];
+      internal int this[int index] => this.select(index);
+
+      internal Indexed_Variable_Set(int capacity)
+      {
+        this._active = new bool[capacity];
+        this._tree = new int[capacity + 1];
+      }
 
       internal void Add(int variable)
       {
-        if (this._indices.ContainsKey(variable))
+        if (this._active[variable])
           return;
-        this._indices.Add(variable, this._variables.Count);
-        this._variables.Add(variable);
+        this._active[variable] = true;
+        ++this.Count;
+        this.update(variable, 1);
       }
 
       internal void Remove(int variable)
       {
-        if (!this._indices.Remove(variable, out int index))
+        if (!this._active[variable])
           return;
-        int last_index = this._variables.Count - 1;
-        int last_variable = this._variables[last_index];
-        this._variables[index] = last_variable;
-        this._variables.RemoveAt(last_index);
-        if (index < this._variables.Count)
-          this._indices[last_variable] = index;
+        this._active[variable] = false;
+        --this.Count;
+        this.update(variable, -1);
+      }
+
+      private void update(int variable, int delta)
+      {
+        for (int index = variable + 1; index < this._tree.Length; index += index & -index)
+          this._tree[index] += delta;
+      }
+
+      private int select(int rank)
+      {
+        int target = rank + 1;
+        int index = 0;
+        int bit = 1;
+        while (bit <= (this._tree.Length - 1) / 2)
+          bit <<= 1;
+        for (; bit != 0; bit >>= 1)
+        {
+          int next = index + bit;
+          if (next < this._tree.Length && this._tree[next] < target)
+          {
+            index = next;
+            target -= this._tree[next];
+          }
+        }
+        return index;
       }
     }
   }
@@ -735,17 +1036,37 @@ internal sealed class Experimental_Map_Generation_Solver
     internal int[] Assignments { get; }
     internal bool Search_Budget_Exhausted { get; }
     internal int Search_Node_Count { get; }
+    internal int Propagation_Removal_Count { get; }
 
     internal Search_Result(
       Cell[] cells,
       int[] assignments,
       bool search_budget_exhausted,
-      int search_node_count)
+      int search_node_count,
+      int propagation_removal_count)
     {
       this.Cells = cells;
       this.Assignments = assignments;
       this.Search_Budget_Exhausted = search_budget_exhausted;
       this.Search_Node_Count = search_node_count;
+      this.Propagation_Removal_Count = propagation_removal_count;
+    }
+  }
+
+  private sealed class Component_Progress : IProgress<int>
+  {
+    private readonly IProgress<int> _progress;
+    private readonly int _offset;
+
+    internal Component_Progress(IProgress<int> progress, int offset)
+    {
+      this._progress = progress;
+      this._offset = offset;
+    }
+
+    public void Report(int value)
+    {
+      this._progress.Report(this._offset + value);
     }
   }
 

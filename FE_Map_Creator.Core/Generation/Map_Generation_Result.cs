@@ -33,6 +33,12 @@ public sealed class Map_Generation_Result
 
   public int Search_Node_Count { get; }
 
+  public int Search_Component_Count => this.Components.Count;
+
+  public int Propagation_Removal_Count { get; }
+
+  public IReadOnlyList<Map_Generation_Component_Result> Components { get; }
+
   /// <summary>
   /// The random seed actually used for this run (either the one supplied in the
   /// options, or one generated automatically when none was supplied).
@@ -51,6 +57,27 @@ public sealed class Map_Generation_Result
     IReadOnlyList<Cell> unresolved_cells,
     bool search_budget_exhausted = false,
     int search_node_count = 0)
+    : this(
+      unresolved_tile_count,
+      seed,
+      algorithm,
+      unresolved_cells,
+      search_budget_exhausted,
+      search_node_count,
+      0,
+      null)
+  {
+  }
+
+  public Map_Generation_Result(
+    int unresolved_tile_count,
+    int seed,
+    Map_Generation_Algorithm algorithm,
+    IReadOnlyList<Cell> unresolved_cells,
+    bool search_budget_exhausted,
+    int search_node_count,
+    int propagation_removal_count,
+    IReadOnlyList<Map_Generation_Component_Result> components)
   {
     this.Unresolved_Tile_Count = unresolved_tile_count;
     this.Seed = seed;
@@ -58,5 +85,9 @@ public sealed class Map_Generation_Result
     this.Unresolved_Cells = unresolved_cells == null ? Array.Empty<Cell>() : new List<Cell>(unresolved_cells).AsReadOnly();
     this.Search_Budget_Exhausted = search_budget_exhausted;
     this.Search_Node_Count = search_node_count;
+    this.Propagation_Removal_Count = propagation_removal_count;
+    this.Components = components == null
+      ? Array.Empty<Map_Generation_Component_Result>()
+      : new List<Map_Generation_Component_Result>(components).AsReadOnly();
   }
 }

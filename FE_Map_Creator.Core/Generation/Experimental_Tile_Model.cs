@@ -158,6 +158,17 @@ internal sealed class Experimental_Tile_Model
     return this.aliases_for_terrain(candidate, terrain).Length > 0;
   }
 
+  internal int terrain_candidate_count(int terrain)
+  {
+    int count = 0;
+    for (int candidate = 0; candidate < this.Candidate_Count; ++candidate)
+    {
+      if (this.terrain_allows_candidate(candidate, terrain))
+        ++count;
+    }
+    return count;
+  }
+
   internal short pick_alias(int candidate, int terrain, Random random)
   {
     short[] aliases = this.aliases_for_terrain(candidate, terrain);

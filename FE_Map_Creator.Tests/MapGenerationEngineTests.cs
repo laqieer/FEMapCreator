@@ -517,9 +517,12 @@ public sealed class MapGenerationEngineTests
   [TestMethod]
   public void ExperimentalReportsExhaustedSearchBudget()
   {
-    Map_State state = depth_fixture_state();
+    Tileset_Generation_Data data = create_generation_data();
+    data.generation_data[1] = new Tile_Data();
+    data.generation_data[2] = new Tile_Data();
+    Map_State state = blank_state(2, 1);
 
-    Map_Generation_Result result = new Map_Generation_Engine(create_depth_fixture_data()).generate(
+    Map_Generation_Result result = new Map_Generation_Engine(data).generate(
       state,
       new Map_Generation_Options()
       {
@@ -638,6 +641,127 @@ public sealed class MapGenerationEngineTests
     Assert.AreEqual(1, result.Unresolved_Tile_Count);
     Assert.HasCount(1, result.Unresolved_Cells);
     Assert.AreEqual(1, state.Drawn.Cast<bool>().Count(drawn => !drawn));
+  }
+
+  [TestMethod]
+  public void ExperimentalReportsAndSolvesDisconnectedComponents()
+  {
+    Map_State state = isolated_checkerboard_state(5, 5);
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_uniform_data(1)).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Experimental_Search_Node_Limit = 13,
+        Seed = 24
+      });
+
+    Assert.AreEqual(13, result.Search_Component_Count);
+    Assert.HasCount(13, result.Components);
+    Assert.AreEqual(result.Search_Node_Count, result.Components.Sum(component => component.Search_Node_Count));
+    Assert.AreEqual(
+      result.Unresolved_Tile_Count,
+      result.Components.Sum(component => component.Unresolved_Tile_Count));
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    Assert.IsLessThanOrEqualTo(13, result.Search_Node_Count);
+    assert_all_tiles(state, 1);
+  }
+
+  [TestMethod]
+  public void ExperimentalComponentBudgetsNeverExceedTotalLimit()
+  {
+    Map_State state = isolated_checkerboard_state(5, 5);
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_generation_data()).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Experimental_Search_Node_Limit = 5,
+        Seed = 25
+      });
+
+    Assert.AreEqual(13, result.Search_Component_Count);
+    Assert.AreEqual(13, result.Unresolved_Tile_Count);
+    Assert.IsTrue(result.Search_Budget_Exhausted);
+    Assert.IsLessThanOrEqualTo(5, result.Search_Node_Count);
+  }
+
+  [TestMethod]
+  public void ExperimentalCarriesUnusedBudgetToLaterComponent()
+  {
+    Map_State state = blank_state(6, 1);
+    state.Tiles[1, 0] = 99;
+    state.Drawn[1, 0] = true;
+    state.Locked[1, 0] = true;
+    state.Tiles[2, 0] = 1;
+    state.Drawn[2, 0] = true;
+    state.Locked[2, 0] = true;
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_depth_fixture_data()).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Experimental_Search_Node_Limit = 100,
+        Seed = 28
+      });
+
+    Assert.AreEqual(2, result.Search_Component_Count);
+    Assert.AreEqual(0, result.Components[0].Search_Node_Count);
+    Assert.AreEqual(100, result.Components[1].Search_Node_Limit);
+    Assert.IsLessThanOrEqualTo(100, result.Search_Node_Count);
+    Assert.AreEqual(
+      0,
+      result.Unresolved_Tile_Count,
+      string.Join(
+        "; ",
+        result.Components.Select(component =>
+          $"{component.Origin.X},{component.Origin.Y}: nodes={component.Search_Node_Count}, unresolved={component.Unresolved_Tile_Count}, exhausted={component.Search_Budget_Exhausted}, propagation={component.Propagation_Removal_Count}")));
+  }
+
+  [TestMethod]
+  public void ExperimentalPropagationPrunesUnsupportedDomains()
+  {
+    Tileset_Generation_Data data = create_generation_data();
+    data.generation_data[1] = new Tile_Data();
+    data.generation_data[2] = new Tile_Data();
+    Map_State state = blank_state(2, 1);
+
+    Map_Generation_Result result = new Map_Generation_Engine(data).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Experimental_Search_Node_Limit = 2,
+        Seed = 26
+      });
+
+    Assert.IsGreaterThan(0, result.Propagation_Removal_Count);
+    Assert.AreEqual(1, result.Search_Component_Count);
+    Assert.IsLessThanOrEqualTo(2, result.Search_Node_Count);
+  }
+
+  [TestMethod]
+  public void ExperimentalComponentProgressIsMonotonic()
+  {
+    Map_State state = isolated_checkerboard_state(5, 5);
+    Recording_Progress progress = new Recording_Progress();
+
+    new Map_Generation_Engine(create_uniform_data(1)).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Seed = 27
+      },
+      progress: progress);
+
+    Assert.IsNotEmpty(progress.Values);
+    for (int index = 1; index < progress.Values.Count; ++index)
+      Assert.IsGreaterThanOrEqualTo(progress.Values[index - 1], progress.Values[index]);
+    Assert.AreEqual(13, progress.Values[^1]);
   }
 
   [TestMethod]
