@@ -82,6 +82,7 @@ public sealed class CliIntegrationTests
     string direct_output = directory.path("direct.map");
     string spec_output = directory.path("spec.map");
     string override_output = directory.path("override.map");
+    string hybrid_output = directory.path("hybrid.map");
     string spec_path = directory.path("experimental.json");
 
     Cli_Process_Result direct = await run_cli_async(
@@ -116,15 +117,28 @@ public sealed class CliIntegrationTests
       "--spec", spec_path,
       "--output", override_output,
       "--algorithm", "legacy");
+    Cli_Process_Result hybrid = await run_cli_async(
+      "generate",
+      "--width", "4",
+      "--height", "3",
+      "--tileset", "01020304",
+      "--output", hybrid_output,
+      "--algorithm", "hybrid",
+      "--hybrid-initial-halo", "0",
+      "--hybrid-max-halo", "2",
+      "--seed", "42");
 
     assert_success(direct);
     assert_success(from_spec);
     assert_success(overridden);
+    assert_success(hybrid);
     StringAssert.Contains(direct.Standard_Output, "using experimental algorithm");
     StringAssert.Contains(from_spec.Standard_Output, "using experimental algorithm");
     StringAssert.Contains(direct.Standard_Output, "restart(s)");
     StringAssert.Contains(direct.Standard_Output, "nogood(s) learned");
     Assert.IsFalse(overridden.Standard_Output.Contains("experimental algorithm", StringComparison.OrdinalIgnoreCase), overridden.describe());
+    StringAssert.Contains(hybrid.Standard_Output, "using hybrid algorithm");
+    StringAssert.Contains(hybrid.Standard_Output, "regional attempt(s)");
     CollectionAssert.AreEqual(File.ReadAllBytes(direct_output), File.ReadAllBytes(spec_output));
   }
 
@@ -539,6 +553,14 @@ public sealed class CliIntegrationTests
       "--tileset", "01020304",
       "--output", directory.path("bad-nogoods.map"),
       "--experimental-nogood-limit=-1");
+    Cli_Process_Result invalid_halo = await run_cli_async(
+      "generate",
+      "--width", "1",
+      "--height", "1",
+      "--tileset", "01020304",
+      "--output", directory.path("bad-halo.map"),
+      "--hybrid-initial-halo", "2",
+      "--hybrid-max-halo", "1");
     Cli_Process_Result conflicting_flags = await run_cli_async(
       "generate",
       "--width", "1",
@@ -560,6 +582,7 @@ public sealed class CliIntegrationTests
     assert_error(invalid_radius, "--repair-radius must be zero or greater.");
     assert_error(invalid_restarts, "--experimental-restarts must be a positive number.");
     assert_error(invalid_nogood_limit, "--experimental-nogood-limit must be zero or greater.");
+    assert_error(invalid_halo, "--hybrid-max-halo must be at least --hybrid-initial-halo.");
     assert_error(conflicting_flags, "--allow-incomplete and --require-complete cannot both be specified.");
     assert_error(missing_mar_metadata, "requires positive width, positive height, and a tileset identifier");
     assert_error(unsupported_zstd_tmx, "encoding \"base64\" with compression \"zstd\" is not supported.");

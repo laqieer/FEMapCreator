@@ -254,6 +254,23 @@ only the final assignment is copied to the caller, and cancellation commits noth
 The worst case remains exponential, which is why this solver is experimental and never
 selected automatically.
 
+### 7.5 Experimental Hybrid Solver
+
+`Map_Generation_Algorithm.Experimental_Hybrid` first runs the unchanged legacy solver on
+a working copy and records its exact unresolved coordinates. Original failures whose
+maximum halos can touch are grouped into deterministic regions. Each region starts at
+`Hybrid_Initial_Halo`; only that region is reopened and passed to the experimental
+component solver. A strictly better regional result is retained, completed regions stop
+expanding, and only still-unresolved regions advance toward `Hybrid_Max_Halo`.
+
+All regional attempts share one search-node budget. The final state falls back to the
+legacy state for every region that was not improved, so hybrid unresolved count can
+never exceed legacy. Cells outside each accepted region's final halo remain equal to the
+legacy result. Diagnostics include the legacy unresolved count, accepted maximum halo,
+per-region/per-halo attempts, all attempted components, and total search work. Hybrid is
+selected explicitly through Core, `--algorithm hybrid`, job specs, or the unchecked
+WinForms hybrid menu item; it never changes the default legacy path.
+
 ---
 
 ## 8. Repair Methodology

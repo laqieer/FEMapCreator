@@ -39,6 +39,10 @@ public sealed class Map_Job_Spec
 
   public bool? ExperimentalEnableConflictLearning { get; set; }
 
+  public int? HybridInitialHalo { get; set; }
+
+  public int? HybridMaxHalo { get; set; }
+
   public int? Depth { get; set; }
 
   public int? RepairRadius { get; set; }
@@ -60,6 +64,12 @@ public sealed class Map_Job_Spec
       throw new InvalidOperationException("ExperimentalRestartCount must be positive.");
     if (this.ExperimentalNogoodLimit.HasValue && this.ExperimentalNogoodLimit.Value < 0)
       throw new InvalidOperationException("ExperimentalNogoodLimit must be zero or greater.");
+    int hybrid_initial_halo = this.HybridInitialHalo ?? 1;
+    int hybrid_max_halo = this.HybridMaxHalo ?? 3;
+    if (hybrid_initial_halo < 0)
+      throw new InvalidOperationException("HybridInitialHalo must be zero or greater.");
+    if (hybrid_max_halo < hybrid_initial_halo)
+      throw new InvalidOperationException("HybridMaxHalo must be at least HybridInitialHalo.");
     validate_optional_dimensions();
     Matrix_Dimensions? dimensions = null;
     dimensions = validate_rectangular_rows(this.Drawn, nameof (this.Drawn), dimensions);
@@ -88,10 +98,11 @@ public sealed class Map_Job_Spec
       return;
     string algorithm = this.Algorithm.Trim();
     if (!string.Equals(algorithm, "legacy", StringComparison.OrdinalIgnoreCase)
-      && !string.Equals(algorithm, "experimental", StringComparison.OrdinalIgnoreCase))
+      && !string.Equals(algorithm, "experimental", StringComparison.OrdinalIgnoreCase)
+      && !string.Equals(algorithm, "hybrid", StringComparison.OrdinalIgnoreCase))
     {
       throw new InvalidOperationException(
-        $"Algorithm \"{this.Algorithm}\" is invalid; expected \"legacy\" or \"experimental\".");
+        $"Algorithm \"{this.Algorithm}\" is invalid; expected \"legacy\", \"experimental\", or \"hybrid\".");
     }
   }
 

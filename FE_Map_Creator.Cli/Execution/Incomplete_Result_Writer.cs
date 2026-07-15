@@ -30,7 +30,13 @@ internal static class Incomplete_Result_Writer
         $"{result.Nogood_Learned_Count} nogood(s) learned, {result.Nogood_Hit_Count} reused, " +
         $"{result.Backjump_Count} backjump(s)" +
         (result.Search_Budget_Exhausted ? ", search budget exhausted" : "")
-      : "";
+      : result.Algorithm == Map_Generation_Algorithm.Experimental_Hybrid
+        ? $", legacy had {result.Hybrid_Legacy_Unresolved_Tile_Count} unresolved cell(s), " +
+          $"{result.Hybrid_Attempt_Count} regional attempt(s), " +
+          (result.Hybrid_Improved ? $"maximum accepted halo {result.Hybrid_Halo}, " : "legacy fallback retained, ") +
+          $"{result.Search_Node_Count} search node(s)" +
+          (result.Search_Budget_Exhausted ? ", search budget exhausted" : "")
+        : "";
     if (require_complete && result.Unresolved_Tile_Count > 0)
     {
       return new Cli_Execution_Result(

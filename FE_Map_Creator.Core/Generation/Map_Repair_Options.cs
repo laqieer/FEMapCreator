@@ -24,6 +24,10 @@ public sealed class Map_Repair_Options
 
   public bool Experimental_Enable_Conflict_Learning { get; init; } = true;
 
+  public int Hybrid_Initial_Halo { get; init; } = 1;
+
+  public int Hybrid_Max_Halo { get; init; } = 3;
+
   /// <summary>
   /// Manhattan-distance radius (in tiles) around every terrain-incompatible or
   /// already-empty (tile index 0) cell that gets reopened for regeneration. Must be

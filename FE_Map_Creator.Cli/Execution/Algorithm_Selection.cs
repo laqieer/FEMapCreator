@@ -14,14 +14,19 @@ internal static class Algorithm_Selection
       return Map_Generation_Algorithm.Legacy;
     if (string.Equals(value.Trim(), "experimental", StringComparison.OrdinalIgnoreCase))
       return Map_Generation_Algorithm.Experimental_Constraint;
+    if (string.Equals(value.Trim(), "hybrid", StringComparison.OrdinalIgnoreCase))
+      return Map_Generation_Algorithm.Experimental_Hybrid;
     throw new InvalidOperationException(
-      $"Algorithm \"{value}\" is invalid; expected \"legacy\" or \"experimental\".");
+      $"Algorithm \"{value}\" is invalid; expected \"legacy\", \"experimental\", or \"hybrid\".");
   }
 
   internal static string suffix(Map_Generation_Algorithm algorithm)
   {
-    return algorithm == Map_Generation_Algorithm.Experimental_Constraint
-      ? " using experimental algorithm"
-      : "";
+    return algorithm switch
+    {
+      Map_Generation_Algorithm.Experimental_Constraint => " using experimental algorithm",
+      Map_Generation_Algorithm.Experimental_Hybrid => " using hybrid algorithm",
+      _ => "",
+    };
   }
 }

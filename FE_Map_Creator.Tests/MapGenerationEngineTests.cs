@@ -463,6 +463,7 @@ public sealed class MapGenerationEngineTests
     Assert.IsTrue(state.Drawn[0, 0]);
     Assert.IsTrue(state.Drawn[1, 0]);
     Assert.IsTrue(state.Tiles[0, 0] == 0 || state.Tiles[1, 0] == 0);
+    Assert.HasCount(1, result.Unresolved_Cells);
   }
 
   [TestMethod]
@@ -898,6 +899,250 @@ public sealed class MapGenerationEngineTests
   }
 
   [TestMethod]
+  public void HybridExpandsHaloAndResolvesLegacyDeadEnd()
+  {
+    Tileset_Generation_Data data = create_depth_fixture_data();
+    Map_State legacy_state = depth_fixture_state();
+    Map_State hybrid_state = depth_fixture_state();
+
+    Map_Generation_Result legacy = new Map_Generation_Engine(data).generate(
+      legacy_state,
+      new Map_Generation_Options()
+      {
+        Depth = 1,
+        Seed = 0
+      });
+    Map_Generation_Result hybrid = new Map_Generation_Engine(data).generate(
+      hybrid_state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Hybrid,
+        Depth = 1,
+        Hybrid_Initial_Halo = 0,
+        Hybrid_Max_Halo = 3,
+        Seed = 0
+      });
+
+    Assert.AreEqual(2, legacy.Unresolved_Tile_Count);
+    Assert.AreEqual(Map_Generation_Algorithm.Experimental_Hybrid, hybrid.Algorithm);
+    Assert.AreEqual(2, hybrid.Hybrid_Legacy_Unresolved_Tile_Count);
+    Assert.AreEqual(1, hybrid.Hybrid_Halo);
+    Assert.AreEqual(2, hybrid.Hybrid_Attempt_Count);
+    Assert.AreEqual(0, hybrid.Unresolved_Tile_Count);
+    Assert.IsFalse(hybrid.Hybrid_Attempts
+      .Any(attempt => attempt.Region_Index == 0 && attempt.Halo > 1));
+    Assert.AreEqual(
+      hybrid.Search_Node_Count,
+      hybrid.Hybrid_Attempts.Sum(attempt => attempt.Search_Node_Count));
+    Assert.AreEqual(
+      hybrid.Search_Node_Count,
+      hybrid.Components.Sum(component => component.Search_Node_Count));
+    assert_horizontal_adjacency(data, hybrid_state);
+  }
+
+  [TestMethod]
+  public void HybridNeverWorsensLegacyResult()
+  {
+    Tileset_Generation_Data data = create_depth_fixture_data();
+    Map_State legacy_state = depth_fixture_state();
+    Map_State hybrid_state = depth_fixture_state();
+
+    Map_Generation_Result legacy = new Map_Generation_Engine(data).generate(
+      legacy_state,
+      new Map_Generation_Options()
+      {
+        Depth = 1,
+        Seed = 2
+      });
+    Map_Generation_Result hybrid = new Map_Generation_Engine(data).generate(
+      hybrid_state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Hybrid,
+        Depth = 1,
+        Experimental_Search_Node_Limit = 1,
+        Hybrid_Initial_Halo = 0,
+        Hybrid_Max_Halo = 0,
+        Seed = 2
+      });
+
+    Assert.IsLessThanOrEqualTo(legacy.Unresolved_Tile_Count, hybrid.Unresolved_Tile_Count);
+  }
+
+  [TestMethod]
+  public void HybridPreservesCellsOutsideFinalHalo()
+  {
+    Tileset_Generation_Data data = create_depth_fixture_data();
+    Map_State baseline = blank_state(6, 1);
+    baseline.Tiles[0, 0] = 1;
+    baseline.Drawn[0, 0] = true;
+    baseline.Locked[0, 0] = true;
+    baseline.Tiles[4, 0] = 99;
+    baseline.Drawn[4, 0] = true;
+    baseline.Locked[4, 0] = true;
+    baseline.Tiles[5, 0] = 5;
+    baseline.Drawn[5, 0] = true;
+    Map_State legacy_state = clone_state(baseline);
+    Map_State hybrid_state = clone_state(baseline);
+
+    Map_Generation_Result legacy = new Map_Generation_Engine(data).generate(
+      legacy_state,
+      new Map_Generation_Options()
+      {
+        Depth = 1,
+        Seed = 3
+      });
+    Map_Generation_Result hybrid = new Map_Generation_Engine(data).generate(
+      hybrid_state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Hybrid,
+        Depth = 1,
+        Hybrid_Initial_Halo = 1,
+        Hybrid_Max_Halo = 1,
+        Seed = 3
+      });
+
+    Assert.IsGreaterThan(0, legacy.Unresolved_Tile_Count);
+    Assert.AreEqual(legacy_state.Tiles[5, 0], hybrid_state.Tiles[5, 0]);
+    Assert.AreEqual(legacy_state.Drawn[5, 0], hybrid_state.Drawn[5, 0]);
+    Assert.IsLessThanOrEqualTo(legacy.Unresolved_Tile_Count, hybrid.Unresolved_Tile_Count);
+  }
+
+  [TestMethod]
+  public void HybridPartialRegionsRemainIsolated()
+  {
+    Tileset_Generation_Data data = create_depth_fixture_data();
+    Map_State state = blank_state(9, 1);
+    state.Tiles[0, 0] = 1;
+    state.Drawn[0, 0] = true;
+    state.Locked[0, 0] = true;
+    state.Tiles[4, 0] = 99;
+    state.Drawn[4, 0] = true;
+    state.Locked[4, 0] = true;
+    state.Tiles[5, 0] = 1;
+    state.Drawn[5, 0] = true;
+    state.Locked[5, 0] = true;
+
+    Map_Generation_Result result = new Map_Generation_Engine(data).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Hybrid,
+        Depth = 1,
+        Hybrid_Initial_Halo = 0,
+        Hybrid_Max_Halo = 0,
+        Seed = 7
+      });
+
+    Assert.AreEqual(4, result.Hybrid_Legacy_Unresolved_Tile_Count);
+    Assert.AreEqual(2, result.Unresolved_Tile_Count);
+    Assert.HasCount(2, result.Hybrid_Attempts);
+    Assert.IsTrue(result.Hybrid_Attempts.All(attempt => attempt.Components.Count == 1));
+    Assert.IsTrue(result.Hybrid_Attempts.All(attempt => attempt.Unresolved_Tile_Count == 1));
+  }
+
+  [TestMethod]
+  public void HybridWithSameSeedIsDeterministic()
+  {
+    Tileset_Generation_Data data = create_depth_fixture_data();
+    Map_State first = depth_fixture_state();
+    Map_State second = depth_fixture_state();
+    Map_Generation_Options options = new Map_Generation_Options()
+    {
+      Algorithm = Map_Generation_Algorithm.Experimental_Hybrid,
+      Hybrid_Initial_Halo = 0,
+      Hybrid_Max_Halo = 1,
+      Seed = 4
+    };
+
+    Map_Generation_Result first_result = new Map_Generation_Engine(data).generate(first, options);
+    Map_Generation_Result second_result = new Map_Generation_Engine(data).generate(second, options);
+
+    CollectionAssert.AreEqual(first.Tiles.Cast<int>().ToArray(), second.Tiles.Cast<int>().ToArray());
+    Assert.AreEqual(first_result.Hybrid_Halo, second_result.Hybrid_Halo);
+    Assert.AreEqual(first_result.Search_Node_Count, second_result.Search_Node_Count);
+  }
+
+  [TestMethod]
+  public void HybridFallbackKeepsLegacyResultAndReportsAttempts()
+  {
+    Map_State state = blank_state(2, 2);
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_generation_data()).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Hybrid,
+        Hybrid_Initial_Halo = 0,
+        Hybrid_Max_Halo = 1,
+        Seed = 5
+      });
+
+    Assert.IsFalse(result.Hybrid_Improved);
+    Assert.AreEqual(-1, result.Hybrid_Halo);
+    Assert.AreEqual(4, result.Hybrid_Legacy_Unresolved_Tile_Count);
+    Assert.IsGreaterThan(0, result.Hybrid_Attempt_Count);
+    Assert.AreEqual(4, result.Unresolved_Tile_Count);
+    Assert.IsGreaterThan(0, result.Components.Count);
+  }
+
+  [TestMethod]
+  public void HybridRepairPreservesLockedZeroLegacySemantics()
+  {
+    Map_State baseline = new Map_State(
+      new int[2, 1]
+      {
+        { 0 },
+        { 1 }
+      },
+      filled_bool_array(2, 1, true),
+      new bool[2, 1]
+      {
+        { true },
+        { false }
+      },
+      new int[2, 1]);
+    Map_State legacy_state = clone_state(baseline);
+    Map_State hybrid_state = clone_state(baseline);
+
+    Map_Generation_Result legacy = new Map_Generation_Engine(create_uniform_data(1)).repair(
+      legacy_state,
+      new Map_Repair_Options()
+      {
+        Radius = 1,
+        Seed = 6
+      });
+    Map_Generation_Result hybrid = new Map_Generation_Engine(create_uniform_data(1)).repair(
+      hybrid_state,
+      new Map_Repair_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Hybrid,
+        Radius = 1,
+        Seed = 6
+      });
+
+    Assert.AreEqual(legacy.Unresolved_Tile_Count, hybrid.Hybrid_Legacy_Unresolved_Tile_Count);
+    Assert.AreEqual(0, hybrid_state.Tiles[0, 0]);
+    Assert.IsTrue(hybrid_state.Drawn[0, 0]);
+    Assert.IsTrue(hybrid_state.Locked[0, 0]);
+  }
+
+  [TestMethod]
+  public void HybridRejectsInvalidHaloRange()
+  {
+    Assert.Throws<ArgumentOutOfRangeException>(() =>
+      new Map_Generation_Engine(create_uniform_data(1)).generate(
+        blank_state(1, 1),
+        new Map_Generation_Options()
+        {
+          Algorithm = Map_Generation_Algorithm.Experimental_Hybrid,
+          Hybrid_Initial_Halo = 2,
+          Hybrid_Max_Halo = 1
+        }));
+  }
+
+  [TestMethod]
   public void ExperimentalWithSameSeedIsDeterministic()
   {
     Tileset_Generation_Data data = create_connected_data(1, 2);
@@ -1100,6 +1345,15 @@ public sealed class MapGenerationEngineTests
       new bool[width, height],
       new bool[width, height],
       new int[width, height]);
+  }
+
+  private static Map_State clone_state(Map_State state)
+  {
+    return new Map_State(
+      (int[,]) state.Tiles.Clone(),
+      (bool[,]) state.Drawn.Clone(),
+      (bool[,]) state.Locked.Clone(),
+      (int[,]) state.Terrain.Clone());
   }
 
   private static Tileset_Generation_Data create_uniform_data(short tile)

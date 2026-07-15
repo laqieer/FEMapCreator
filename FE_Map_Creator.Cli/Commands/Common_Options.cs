@@ -51,9 +51,9 @@ internal static class Common_Options
   {
     return new Option<string>("--algorithm")
     {
-      Description = "Map solver to use: legacy (default) or experimental.",
+      Description = "Map solver to use: legacy (default), experimental, or hybrid.",
       DefaultValueFactory = _ => "legacy",
-    }.AcceptOnlyFromAmong("legacy", "experimental");
+    }.AcceptOnlyFromAmong("legacy", "experimental", "hybrid");
   }
 
   internal static Option<int> experimental_search_node_limit()
@@ -89,6 +89,24 @@ internal static class Common_Options
     {
       Description = "Disable experimental conflict-directed backjumping and nogood reuse.",
       DefaultValueFactory = _ => false,
+    };
+  }
+
+  internal static Option<int> hybrid_initial_halo()
+  {
+    return new Option<int>("--hybrid-initial-halo")
+    {
+      Description = "Initial Manhattan halo around legacy unresolved cells for hybrid solving.",
+      DefaultValueFactory = _ => 1,
+    };
+  }
+
+  internal static Option<int> hybrid_max_halo()
+  {
+    return new Option<int>("--hybrid-max-halo")
+    {
+      Description = "Maximum adaptive Manhattan halo used by hybrid solving.",
+      DefaultValueFactory = _ => 3,
     };
   }
 

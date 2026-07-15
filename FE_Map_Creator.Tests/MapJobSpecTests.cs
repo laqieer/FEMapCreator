@@ -193,6 +193,7 @@ public sealed class MapJobSpecTests
         Assert.Throws<InvalidOperationException>(() => new Map_Job_Spec_Reader().read_job(filename));
       StringAssert.Contains(ex.Message, "legacy");
       StringAssert.Contains(ex.Message, "experimental");
+      StringAssert.Contains(ex.Message, "hybrid");
     }
     finally
     {
@@ -247,6 +248,9 @@ public sealed class MapJobSpecTests
       InvalidOperationException nogood_ex = Assert.Throws<InvalidOperationException>(() =>
         new Map_Job_Spec() { ExperimentalNogoodLimit = -1 }.validate());
       StringAssert.Contains(nogood_ex.Message, "ExperimentalNogoodLimit");
+      InvalidOperationException halo_ex = Assert.Throws<InvalidOperationException>(() =>
+        new Map_Job_Spec() { HybridInitialHalo = 2, HybridMaxHalo = 1 }.validate());
+      StringAssert.Contains(halo_ex.Message, "HybridMaxHalo");
     }
     finally
     {
@@ -274,6 +278,8 @@ public sealed class MapJobSpecTests
         ExperimentalRestartCount = 5,
         ExperimentalNogoodLimit = 64,
         ExperimentalEnableConflictLearning = false,
+        HybridInitialHalo = 0,
+        HybridMaxHalo = 2,
         Drawn = new bool[][]
         {
           new bool[] { true, false },
@@ -302,6 +308,8 @@ public sealed class MapJobSpecTests
       Assert.AreEqual(5, actual.ExperimentalRestartCount);
       Assert.AreEqual(64, actual.ExperimentalNogoodLimit);
       Assert.IsFalse(actual.ExperimentalEnableConflictLearning);
+      Assert.AreEqual(0, actual.HybridInitialHalo);
+      Assert.AreEqual(2, actual.HybridMaxHalo);
       Assert.IsTrue(actual.Drawn[0][0]);
       Assert.IsFalse(actual.Drawn[0][1]);
       Assert.IsTrue(actual.Locked[0][1]);

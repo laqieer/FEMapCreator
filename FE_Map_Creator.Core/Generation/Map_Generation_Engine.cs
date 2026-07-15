@@ -62,11 +62,22 @@ public sealed class Map_Generation_Engine
     validate_depth(options.Depth);
 
     Random random = create_random(options.Seed, out int seed);
+    if (options.Algorithm == Map_Generation_Algorithm.Experimental_Hybrid)
+    {
+      validate_experimental_options(
+        options.Experimental_Search_Node_Limit,
+        options.Experimental_Restart_Count,
+        options.Experimental_Nogood_Limit);
+      validate_hybrid_halos(options.Hybrid_Initial_Halo, options.Hybrid_Max_Halo);
+      return new Hybrid_Map_Generation_Solver(this._tileset_generation_data, this._terrain_tileset)
+        .generate(state, options, seed, cancellation_token, tile_drawn, progress);
+    }
     if (options.Algorithm == Map_Generation_Algorithm.Experimental_Constraint)
     {
-      validate_search_node_limit(options.Experimental_Search_Node_Limit);
-      validate_restart_count(options.Experimental_Restart_Count);
-      validate_nogood_limit(options.Experimental_Nogood_Limit);
+      validate_experimental_options(
+        options.Experimental_Search_Node_Limit,
+        options.Experimental_Restart_Count,
+        options.Experimental_Nogood_Limit);
       return new Experimental_Map_Generation_Solver(this._tileset_generation_data, this._terrain_tileset)
         .generate(
           state,
@@ -81,8 +92,20 @@ public sealed class Map_Generation_Engine
           progress);
     }
     validate_algorithm(options.Algorithm);
-    int unresolved = this.run_generation(state, options.Depth, random, cancellation_token, tile_drawn, progress);
-    return new Map_Generation_Result(unresolved, seed);
+    List<Cell> unresolved_cells = new List<Cell>();
+    int unresolved = this.run_generation(
+      state,
+      options.Depth,
+      random,
+      cancellation_token,
+      tile_drawn,
+      progress,
+      unresolved_cells);
+    return new Map_Generation_Result(
+      unresolved,
+      seed,
+      Map_Generation_Algorithm.Legacy,
+      unresolved_cells);
   }
 
   /// <summary>
@@ -107,11 +130,22 @@ public sealed class Map_Generation_Engine
       throw new ArgumentOutOfRangeException(nameof(options), options.Radius, "Repair radius must be zero or greater.");
 
     Random random = create_random(options.Seed, out int seed);
+    if (options.Algorithm == Map_Generation_Algorithm.Experimental_Hybrid)
+    {
+      validate_experimental_options(
+        options.Experimental_Search_Node_Limit,
+        options.Experimental_Restart_Count,
+        options.Experimental_Nogood_Limit);
+      validate_hybrid_halos(options.Hybrid_Initial_Halo, options.Hybrid_Max_Halo);
+      return new Hybrid_Map_Generation_Solver(this._tileset_generation_data, this._terrain_tileset)
+        .repair(state, options, seed, cancellation_token, tile_drawn, progress);
+    }
     if (options.Algorithm == Map_Generation_Algorithm.Experimental_Constraint)
     {
-      validate_search_node_limit(options.Experimental_Search_Node_Limit);
-      validate_restart_count(options.Experimental_Restart_Count);
-      validate_nogood_limit(options.Experimental_Nogood_Limit);
+      validate_experimental_options(
+        options.Experimental_Search_Node_Limit,
+        options.Experimental_Restart_Count,
+        options.Experimental_Nogood_Limit);
       return new Experimental_Map_Generation_Solver(this._tileset_generation_data, this._terrain_tileset)
         .repair(
           state,
@@ -130,8 +164,20 @@ public sealed class Map_Generation_Engine
     this.resolve_terrain_incompatible_cells(state);
     reopen_cells_around_holes(state, options.Radius, cancellation_token);
 
-    int unresolved = this.run_generation(state, options.Depth, random, cancellation_token, tile_drawn, progress);
-    return new Map_Generation_Result(unresolved, seed);
+    List<Cell> unresolved_cells = new List<Cell>();
+    int unresolved = this.run_generation(
+      state,
+      options.Depth,
+      random,
+      cancellation_token,
+      tile_drawn,
+      progress,
+      unresolved_cells);
+    return new Map_Generation_Result(
+      unresolved,
+      seed,
+      Map_Generation_Algorithm.Legacy,
+      unresolved_cells);
   }
 
   private static void validate_depth(int depth)
@@ -150,6 +196,24 @@ public sealed class Map_Generation_Engine
   {
     if (search_node_limit <= 0)
       throw new ArgumentOutOfRangeException(nameof(search_node_limit), search_node_limit, "Experimental search node limit must be positive.");
+  }
+
+  private static void validate_experimental_options(
+    int search_node_limit,
+    int restart_count,
+    int nogood_limit)
+  {
+    validate_search_node_limit(search_node_limit);
+    validate_restart_count(restart_count);
+    validate_nogood_limit(nogood_limit);
+  }
+
+  private static void validate_hybrid_halos(int initial_halo, int max_halo)
+  {
+    if (initial_halo < 0)
+      throw new ArgumentOutOfRangeException(nameof(initial_halo), initial_halo, "Hybrid initial halo must be zero or greater.");
+    if (max_halo < initial_halo)
+      throw new ArgumentOutOfRangeException(nameof(max_halo), max_halo, "Hybrid maximum halo must be at least the initial halo.");
   }
 
   private static void validate_restart_count(int restart_count)
@@ -250,7 +314,8 @@ public sealed class Map_Generation_Engine
     Random random,
     CancellationToken cancellation_token,
     Tile_Drawn_Callback tile_drawn,
-    IProgress<int> progress)
+    IProgress<int> progress,
+    List<Cell> unresolved_cells)
   {
     short[,] tile_priorities = this.compute_tile_priorities(state.Tiles);
     Generation_Frontier open_tiles = collect_frontier(state, tile_priorities);
@@ -282,6 +347,7 @@ public sealed class Map_Generation_Engine
           }
 
           mark_cell_as_unresolved(state, seed_cell, tile_drawn);
+          unresolved_cells?.Add(seed_cell);
           remaining_fillable.remove(seed_index);
           lookahead_scratch.sync_cell(state, seed_cell.X, seed_cell.Y);
           ++unresolved;
@@ -324,6 +390,7 @@ public sealed class Map_Generation_Engine
       {
         ++unresolved;
         chosen = 0;
+        unresolved_cells?.Add(target);
       }
       else if (candidates.Count > 1)
       {

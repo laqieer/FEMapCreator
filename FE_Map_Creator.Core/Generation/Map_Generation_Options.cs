@@ -35,6 +35,10 @@ public sealed class Map_Generation_Options
   /// </summary>
   public bool Experimental_Enable_Conflict_Learning { get; init; } = true;
 
+  public int Hybrid_Initial_Halo { get; init; } = 1;
+
+  public int Hybrid_Max_Halo { get; init; } = 3;
+
   /// <summary>
   /// Lookahead depth for the neighbor-search backtracking algorithm. Must be 1 or 2
   /// (matches the GUI's DEPTH/MAX_DEPTH constants).

@@ -82,6 +82,18 @@ generation and repair for the current session.
 See [`docs/experimental-solver-benchmark.md`](docs/experimental-solver-benchmark.md) for
 the fixed-seed legacy/experimental comparison used to keep this feature opt-in.
 
+For large maps, `--algorithm hybrid` runs the legacy solver first, groups its unresolved
+cells into independent regions, and applies the constraint solver only inside adaptive
+Manhattan halos. Completed regions are retained while only unresolved regions expand.
+Hybrid output is guaranteed to have no more unresolved cells than its legacy baseline:
+
+```powershell
+FE_Map_Creator.Cli.exe generate --width 30 --height 20 --tileset "FE6 - Fields - 01020304" --output map.hybrid.map --algorithm hybrid --hybrid-initial-halo 1 --hybrid-max-halo 3 --seed 12345
+```
+
+WinForms exposes mutually exclusive **Experimental Constraint Solver** and
+**Hybrid Legacy + Constraint Solver** menu toggles; both are unchecked by default.
+
 Generate from a template plus JSON masks that identify which template cells are initially drawn or locked:
 
 ```powershell
@@ -167,6 +179,8 @@ FE_Map_Creator.Cli.exe batch --manifest manifest.json --fail-fast
   "experimentalRestartCount": 4,
   "experimentalNogoodLimit": 4096,
   "experimentalEnableConflictLearning": true,
+  "hybridInitialHalo": 1,
+  "hybridMaxHalo": 3,
   "seed": 42,
   "depth": 1,
   "locked": [

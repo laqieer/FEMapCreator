@@ -50,6 +50,16 @@ public sealed class Map_Generation_Result
 
   public int Backjump_Count => this.Components.Sum(component => component.Backjump_Count);
 
+  public int Hybrid_Legacy_Unresolved_Tile_Count { get; }
+
+  public int Hybrid_Halo { get; }
+
+  public int Hybrid_Attempt_Count { get; }
+
+  public bool Hybrid_Improved { get; }
+
+  public IReadOnlyList<Map_Generation_Attempt_Result> Hybrid_Attempts { get; }
+
   /// <summary>
   /// The random seed actually used for this run (either the one supplied in the
   /// options, or one generated automatically when none was supplied).
@@ -76,6 +86,11 @@ public sealed class Map_Generation_Result
       search_budget_exhausted,
       search_node_count,
       0,
+      null,
+      -1,
+      -1,
+      0,
+      false,
       null)
   {
   }
@@ -89,6 +104,37 @@ public sealed class Map_Generation_Result
     int search_node_count,
     int propagation_removal_count,
     IReadOnlyList<Map_Generation_Component_Result> components)
+    : this(
+      unresolved_tile_count,
+      seed,
+      algorithm,
+      unresolved_cells,
+      search_budget_exhausted,
+      search_node_count,
+      propagation_removal_count,
+      components,
+      -1,
+      -1,
+      0,
+      false,
+      null)
+  {
+  }
+
+  public Map_Generation_Result(
+    int unresolved_tile_count,
+    int seed,
+    Map_Generation_Algorithm algorithm,
+    IReadOnlyList<Cell> unresolved_cells,
+    bool search_budget_exhausted,
+    int search_node_count,
+    int propagation_removal_count,
+    IReadOnlyList<Map_Generation_Component_Result> components,
+    int hybrid_legacy_unresolved_tile_count,
+    int hybrid_halo,
+    int hybrid_attempt_count,
+    bool hybrid_improved,
+    IReadOnlyList<Map_Generation_Attempt_Result> hybrid_attempts)
   {
     this.Unresolved_Tile_Count = unresolved_tile_count;
     this.Seed = seed;
@@ -100,5 +146,12 @@ public sealed class Map_Generation_Result
     this.Components = components == null
       ? Array.Empty<Map_Generation_Component_Result>()
       : new List<Map_Generation_Component_Result>(components).AsReadOnly();
+    this.Hybrid_Legacy_Unresolved_Tile_Count = hybrid_legacy_unresolved_tile_count;
+    this.Hybrid_Halo = hybrid_halo;
+    this.Hybrid_Attempt_Count = hybrid_attempt_count;
+    this.Hybrid_Improved = hybrid_improved;
+    this.Hybrid_Attempts = hybrid_attempts == null
+      ? Array.Empty<Map_Generation_Attempt_Result>()
+      : new List<Map_Generation_Attempt_Result>(hybrid_attempts).AsReadOnly();
   }
 }

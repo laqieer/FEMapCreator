@@ -122,6 +122,7 @@ public class FE_Map_Creator_Form : Form
   private ToolStripMenuItem clearPinnedTilesToolStripMenuItem;
   private ToolStripMenuItem repairMapToolStripMenuItem;
   private ToolStripMenuItem experimentalConstraintSolverToolStripMenuItem;
+  private ToolStripMenuItem hybridSolverToolStripMenuItem;
   private ToolStripSeparator toolStripMenuItem1;
   private ToolStripMenuItem clearTerrainTagsToolStripMenuItem;
   private ToolStripMenuItem convertMapToTerrainTagsToolStripMenuItem;
@@ -950,11 +951,19 @@ public class FE_Map_Creator_Form : Form
   {
     if (result.Unresolved_Tile_Count <= 0)
       return;
-    string experimental = result.Algorithm == Map_Generation_Algorithm.Experimental_Constraint
-      ? result.Search_Budget_Exhausted
+    string experimental = result.Algorithm switch
+    {
+      Map_Generation_Algorithm.Experimental_Constraint => result.Search_Budget_Exhausted
         ? "\r\nExperimental constraint solver returned the best result found within its search budget."
-        : "\r\nExperimental constraint solver minimized the unresolved count."
-      : "";
+        : "\r\nExperimental constraint solver minimized the unresolved count.",
+      Map_Generation_Algorithm.Experimental_Hybrid =>
+        result.Hybrid_Halo >= 0
+          ? $"\r\nHybrid solver reduced the legacy result from " +
+            $"{result.Hybrid_Legacy_Unresolved_Tile_Count} unresolved tile(s) " +
+            $"using halo {result.Hybrid_Halo}."
+          : "\r\nHybrid regional attempts did not improve the legacy result.",
+      _ => "",
+    };
     if (result.Search_Budget_Exhausted)
     {
       experimental +=
@@ -1103,7 +1112,12 @@ public class FE_Map_Creator_Form : Form
 
   private static string algorithm_status_suffix(Map_Generation_Algorithm algorithm)
   {
-    return algorithm == Map_Generation_Algorithm.Experimental_Constraint ? " (experimental)" : "";
+    return algorithm switch
+    {
+      Map_Generation_Algorithm.Experimental_Constraint => " (experimental)",
+      Map_Generation_Algorithm.Experimental_Hybrid => " (hybrid)",
+      _ => "",
+    };
   }
 
   private Map_State create_experimental_generation_state(int width, int height)
@@ -1158,11 +1172,21 @@ public class FE_Map_Creator_Form : Form
     return state;
   }
 
+  private Map_State create_hybrid_repair_state()
+  {
+    return new Map_State(
+      (int[,]) this.Map_Tiles.Clone(),
+      (bool[,]) this.Drawn_Tiles.Clone(),
+      (bool[,]) this.Locked_Tiles.Clone(),
+      (int[,]) this.Terrain_Types.Clone());
+  }
+
   private void generate_map_experimental(
     Map_State state,
     int depth,
     int zoom,
-    CancellationToken cancellation_token)
+    CancellationToken cancellation_token,
+    Map_Generation_Algorithm algorithm)
   {
     Map_Generation_Result result = null;
     Exception operation_error = null;
@@ -1174,11 +1198,11 @@ public class FE_Map_Creator_Form : Form
         state,
         new Map_Generation_Options()
         {
-          Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+          Algorithm = algorithm,
           Depth = depth
         },
         cancellation_token);
-      status = $"Map generation complete (experimental). Seed: {result.Seed}.";
+      status = $"Map generation complete{algorithm_status_suffix(result.Algorithm)}. Seed: {result.Seed}.";
     }
     catch (OperationCanceledException) when (cancellation_token.IsCancellationRequested)
     {
@@ -1236,7 +1260,8 @@ public class FE_Map_Creator_Form : Form
     int depth,
     int radius,
     int zoom,
-    CancellationToken cancellation_token)
+    CancellationToken cancellation_token,
+    Map_Generation_Algorithm algorithm)
   {
     Map_Generation_Result result = null;
     Exception operation_error = null;
@@ -1248,12 +1273,12 @@ public class FE_Map_Creator_Form : Form
         state,
         new Map_Repair_Options()
         {
-          Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+          Algorithm = algorithm,
           Depth = depth,
           Radius = radius
         },
         cancellation_token);
-      status = $"Map repair complete (experimental). Seed: {result.Seed}.";
+      status = $"Map repair complete{algorithm_status_suffix(result.Algorithm)}. Seed: {result.Seed}.";
     }
     catch (OperationCanceledException) when (cancellation_token.IsCancellationRequested)
     {
@@ -2878,18 +2903,24 @@ label_27:
   {
     if (!(this.WidthUpDown.Value > 0M) || !(this.HeightUpDown.Value > 0M) || this.Updating)
       return;
-    Map_Generation_Algorithm algorithm = this.experimentalConstraintSolverToolStripMenuItem.Checked
-      ? Map_Generation_Algorithm.Experimental_Constraint
-      : Map_Generation_Algorithm.Legacy;
-    if (algorithm == Map_Generation_Algorithm.Experimental_Constraint)
+    Map_Generation_Algorithm algorithm = this.selected_generation_algorithm;
+    if (algorithm != Map_Generation_Algorithm.Legacy)
     {
       int width = (int) this.WidthUpDown.Value;
       int height = (int) this.HeightUpDown.Value;
       int depth = (int) this.DepthUpDown.Value;
       int experimental_zoom = this.Zoom;
       Map_State state = this.create_experimental_generation_state(width, height);
-      CancellationToken experimental_cancellation = this.start_map_operation("Generating map (experimental)...");
-      new Thread(() => this.generate_map_experimental(state, depth, experimental_zoom, experimental_cancellation)).Start();
+      CancellationToken experimental_cancellation = this.start_map_operation(
+        algorithm == Map_Generation_Algorithm.Experimental_Hybrid
+          ? "Generating map (hybrid)..."
+          : "Generating map (experimental)...");
+      new Thread(() => this.generate_map_experimental(
+        state,
+        depth,
+        experimental_zoom,
+        experimental_cancellation,
+        algorithm)).Start();
       return;
     }
     this.Text = string.Format("Map Editor - New Map");
@@ -2957,15 +2988,24 @@ label_27:
     this.refresh_panel_size();
     int depth = (int) this.DepthUpDown.Value;
     int radius = (int) this.DistUpDown.Value;
-    Map_Generation_Algorithm algorithm = this.experimentalConstraintSolverToolStripMenuItem.Checked
-      ? Map_Generation_Algorithm.Experimental_Constraint
-      : Map_Generation_Algorithm.Legacy;
+    Map_Generation_Algorithm algorithm = this.selected_generation_algorithm;
     int zoom = this.Zoom;
-    if (algorithm == Map_Generation_Algorithm.Experimental_Constraint)
+    if (algorithm != Map_Generation_Algorithm.Legacy)
     {
-      Map_State state = this.create_experimental_repair_state();
-      CancellationToken experimental_cancellation = this.start_map_operation("Repairing map (experimental)...");
-      new Thread((ThreadStart) (() => this.repair_map_experimental(state, depth, radius, zoom, experimental_cancellation)))
+      Map_State state = algorithm == Map_Generation_Algorithm.Experimental_Hybrid
+        ? this.create_hybrid_repair_state()
+        : this.create_experimental_repair_state();
+      CancellationToken experimental_cancellation = this.start_map_operation(
+        algorithm == Map_Generation_Algorithm.Experimental_Hybrid
+          ? "Repairing map (hybrid)..."
+          : "Repairing map (experimental)...");
+      new Thread((ThreadStart) (() => this.repair_map_experimental(
+        state,
+        depth,
+        radius,
+        zoom,
+        experimental_cancellation,
+        algorithm)))
       {
         IsBackground = false
       }.Start();
@@ -2977,6 +3017,30 @@ label_27:
     {
       IsBackground = false
     }.Start();
+  }
+
+  private Map_Generation_Algorithm selected_generation_algorithm
+  {
+    get
+    {
+      if (this.hybridSolverToolStripMenuItem.Checked)
+        return Map_Generation_Algorithm.Experimental_Hybrid;
+      return this.experimentalConstraintSolverToolStripMenuItem.Checked
+        ? Map_Generation_Algorithm.Experimental_Constraint
+        : Map_Generation_Algorithm.Legacy;
+    }
+  }
+
+  private void experimentalConstraintSolverToolStripMenuItem_Click(object sender, EventArgs e)
+  {
+    if (this.experimentalConstraintSolverToolStripMenuItem.Checked)
+      this.hybridSolverToolStripMenuItem.Checked = false;
+  }
+
+  private void hybridSolverToolStripMenuItem_Click(object sender, EventArgs e)
+  {
+    if (this.hybridSolverToolStripMenuItem.Checked)
+      this.experimentalConstraintSolverToolStripMenuItem.Checked = false;
   }
 
   private void CancelOperationButton_Click(object sender, EventArgs e)
@@ -3207,6 +3271,7 @@ label_27:
     this.generateMapToolStripMenuItem = new ToolStripMenuItem();
     this.repairMapToolStripMenuItem = new ToolStripMenuItem();
     this.experimentalConstraintSolverToolStripMenuItem = new ToolStripMenuItem();
+    this.hybridSolverToolStripMenuItem = new ToolStripMenuItem();
     this.convertMapToTerrainTagsToolStripMenuItem = new ToolStripMenuItem();
     this.copyTerrainTagsImageToolStripMenuItem = new ToolStripMenuItem();
     this.importTerrainTagsFromClipboardImageToolStripMenuItem = new ToolStripMenuItem();
@@ -3598,12 +3663,13 @@ label_27:
     this.clearTerrainTagsToolStripMenuItem.Size = new Size(147, 22);
     this.clearTerrainTagsToolStripMenuItem.Text = "Clear Terrain Tags";
     this.clearTerrainTagsToolStripMenuItem.Click += new EventHandler(this.clearTerrainTagsToolStripMenuItem_Click);
-    this.mapGenerationToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[9]
+    this.mapGenerationToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[10]
     {
       (ToolStripItem) this.prepareTilesetForEditsToolStripMenuItem,
       (ToolStripItem) this.generateMapToolStripMenuItem,
       (ToolStripItem) this.repairMapToolStripMenuItem,
       (ToolStripItem) this.experimentalConstraintSolverToolStripMenuItem,
+      (ToolStripItem) this.hybridSolverToolStripMenuItem,
       (ToolStripItem) this.convertMapToTerrainTagsToolStripMenuItem,
       (ToolStripItem) this.copyTerrainTagsImageToolStripMenuItem,
       (ToolStripItem) this.importTerrainTagsFromClipboardImageToolStripMenuItem,
@@ -3635,6 +3701,13 @@ label_27:
     this.experimentalConstraintSolverToolStripMenuItem.Size = new Size((int) byte.MaxValue, 22);
     this.experimentalConstraintSolverToolStripMenuItem.Text = "Experimental Constraint Solver";
     this.experimentalConstraintSolverToolStripMenuItem.ToolTipText = "Use the opt-in global backtracking solver for generation and repair.";
+    this.experimentalConstraintSolverToolStripMenuItem.Click += new EventHandler(this.experimentalConstraintSolverToolStripMenuItem_Click);
+    this.hybridSolverToolStripMenuItem.CheckOnClick = true;
+    this.hybridSolverToolStripMenuItem.Name = "hybridSolverToolStripMenuItem";
+    this.hybridSolverToolStripMenuItem.Size = new Size((int) byte.MaxValue, 22);
+    this.hybridSolverToolStripMenuItem.Text = "Hybrid Legacy + Constraint Solver";
+    this.hybridSolverToolStripMenuItem.ToolTipText = "Run legacy first, then solve only unresolved regions with adaptive halos.";
+    this.hybridSolverToolStripMenuItem.Click += new EventHandler(this.hybridSolverToolStripMenuItem_Click);
     this.convertMapToTerrainTagsToolStripMenuItem.Name = "convertMapToTerrainTagsToolStripMenuItem";
     this.convertMapToTerrainTagsToolStripMenuItem.Size = new Size((int) byte.MaxValue, 22);
     this.convertMapToTerrainTagsToolStripMenuItem.Text = "Convert Map to Terrain Tags";
