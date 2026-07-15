@@ -65,6 +65,33 @@ internal static class Common_Options
     };
   }
 
+  internal static Option<int> experimental_restarts()
+  {
+    return new Option<int>("--experimental-restarts")
+    {
+      Description = "Number of deterministic experimental search restarts. Must be positive.",
+      DefaultValueFactory = _ => 4,
+    };
+  }
+
+  internal static Option<int> experimental_nogood_limit()
+  {
+    return new Option<int>("--experimental-nogood-limit")
+    {
+      Description = "Maximum exact nogoods retained per experimental component. Zero disables caching.",
+      DefaultValueFactory = _ => 4096,
+    };
+  }
+
+  internal static Option<bool> no_experimental_conflict_learning()
+  {
+    return new Option<bool>("--no-experimental-conflict-learning")
+    {
+      Description = "Disable experimental conflict-directed backjumping and nogood reuse.",
+      DefaultValueFactory = _ => false,
+    };
+  }
+
   internal static Option<int?> seed()
   {
     return new Option<int?>("--seed")

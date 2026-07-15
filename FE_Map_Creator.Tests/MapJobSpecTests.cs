@@ -226,6 +226,35 @@ public sealed class MapJobSpecTests
   }
 
   [TestMethod]
+  public void ReaderRejectsInvalidExperimentalSearchSettings()
+  {
+    string directory = create_temp_directory();
+    try
+    {
+      string filename = Path.Combine(directory, "job.json");
+      File.WriteAllText(filename,
+        """
+        {
+          "version": 1,
+          "experimentalRestartCount": 0,
+          "experimentalNogoodLimit": -1
+        }
+        """);
+
+      InvalidOperationException ex =
+        Assert.Throws<InvalidOperationException>(() => new Map_Job_Spec_Reader().read_job(filename));
+      StringAssert.Contains(ex.Message, "ExperimentalRestartCount");
+      InvalidOperationException nogood_ex = Assert.Throws<InvalidOperationException>(() =>
+        new Map_Job_Spec() { ExperimentalNogoodLimit = -1 }.validate());
+      StringAssert.Contains(nogood_ex.Message, "ExperimentalNogoodLimit");
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [TestMethod]
   public void JobSpecRoundTripPreservesVersionAndOrientation()
   {
     string directory = create_temp_directory();
@@ -242,6 +271,9 @@ public sealed class MapJobSpecTests
         Tileset = "01020304",
         Algorithm = "experimental",
         ExperimentalSearchNodeLimit = 1234,
+        ExperimentalRestartCount = 5,
+        ExperimentalNogoodLimit = 64,
+        ExperimentalEnableConflictLearning = false,
         Drawn = new bool[][]
         {
           new bool[] { true, false },
@@ -267,6 +299,9 @@ public sealed class MapJobSpecTests
       Assert.AreEqual("01020304", actual.Tileset);
       Assert.AreEqual("experimental", actual.Algorithm);
       Assert.AreEqual(1234, actual.ExperimentalSearchNodeLimit);
+      Assert.AreEqual(5, actual.ExperimentalRestartCount);
+      Assert.AreEqual(64, actual.ExperimentalNogoodLimit);
+      Assert.IsFalse(actual.ExperimentalEnableConflictLearning);
       Assert.IsTrue(actual.Drawn[0][0]);
       Assert.IsFalse(actual.Drawn[0][1]);
       Assert.IsTrue(actual.Locked[0][1]);

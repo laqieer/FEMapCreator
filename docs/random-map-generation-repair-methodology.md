@@ -10,7 +10,7 @@
 
 ## 2. Executive Summary
 
-FEMapCreator has two corpus-trained map solvers behind the shared `Map_Generation_Engine`. The **legacy frontier solver** remains the default in Core, CLI, job specs, and WinForms; it uses priority-driven expansion plus bounded depth-1/depth-2 lookahead. The opt-in **experimental constraint solver** uses global seeded backtracking, forward domain propagation, and budgeted branch-and-bound to seek zero unresolved cells and improve the best incomplete assignment when a complete assignment is not found. Both operate on `Map_State` (`Tiles`, `Drawn`, `Locked`, and `Terrain`) and support generation and repair. CLI selection uses `--algorithm legacy|experimental`; job specs use `"algorithm"`; WinForms exposes an unchecked **Experimental Constraint Solver** menu item. CLI and WinForms both report seeds, unresolved counts, progress, budget exhaustion, and cooperative cancellation.
+FEMapCreator has two corpus-trained map solvers behind the shared `Map_Generation_Engine`. The **legacy frontier solver** remains the default in Core, CLI, job specs, and WinForms; it uses priority-driven expansion plus bounded depth-1/depth-2 lookahead. The opt-in **experimental constraint solver** decomposes open cells into components, applies AC-3 propagation, uses least-constraining weighted candidate ordering, and combines deterministic best-partial and complete restarts under one global node budget. Complete restarts add conflict-directed backjumping and a bounded exact nogood cache. Both operate on `Map_State` (`Tiles`, `Drawn`, `Locked`, and `Terrain`) and support generation and repair. CLI selection uses `--algorithm legacy|experimental`; job specs use `"algorithm"`; WinForms exposes an unchecked **Experimental Constraint Solver** menu item. CLI and WinForms report seeds, unresolved counts, progress, restart/search diagnostics, budget exhaustion, and cooperative cancellation.
 
 ---
 
@@ -235,22 +235,24 @@ The experimental path is selected explicitly through
 actual aliases, validates positive bidirectional adjacency edges, and precomputes compact
 neighbor bitsets.
 
-`Experimental_Map_Generation_Solver` builds a domain for every open, unlocked cell.
-Whenever a real tile is assigned, its allowed-neighbor bitset is intersected into each
-unassigned cardinal neighbor. The search chooses a minimum-domain cell, breaks ties by
-neighbor priority and the seeded RNG, and orders candidates by learned adjacency weights
-plus optional depth-2 support scoring. Every branch is reversible through a word-level
-domain-change trail.
+`Experimental_Map_Generation_Solver` partitions open cells into cardinal connected
+components and solves easier/lower-domain components first. Each component receives the
+entire remaining global node budget, so unused work carries forward. Initial and
+assignment-triggered AC-3 propagation removes unsupported candidates through cached
+neighbor bitsets; every domain change is reversible through a word-level trail. The
+search chooses a minimum-domain cell and ranks candidates first by least-constraining
+neighbor support, then by learned adjacency weights and a deterministic restart RNG.
 
-Unresolved is an explicit assignment state, not tile index `0`. A fast greedy pass first
-produces an incumbent. Real candidates are then tried before the penalized unresolved
-branch, and branch-and-bound retains every improvement. A zero-unresolved solution is
-globally optimal. Incomplete optimality is proven only when search finishes before the
-configurable node limit (10,000 by default); otherwise `Map_Generation_Result` and CLI
-output report budget exhaustion with the best assignment found so far. Search runs on
-cloned arrays, only the final assignment is copied to the caller, and cancellation
-commits nothing. The worst case remains exponential, which is why this solver is
-experimental and never selected automatically.
+Unresolved is an explicit assignment state, not tile index `0`. The first restart
+performs a short best-partial search; complete restarts use conflict-directed
+backjumping and share a FIFO-bounded cache of exact failed partial assignments; a final
+partial restart consumes remaining budget when configured. A zero-unresolved result
+terminates later restarts and is globally optimal. `Map_Generation_Result` exposes
+per-component node limits/counts, restart/best-restart data, propagation removals,
+learned/reused nogoods, backjumps, and budget exhaustion. Search runs on cloned arrays,
+only the final assignment is copied to the caller, and cancellation commits nothing.
+The worst case remains exponential, which is why this solver is experimental and never
+selected automatically.
 
 ---
 

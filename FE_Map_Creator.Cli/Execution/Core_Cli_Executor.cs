@@ -154,6 +154,12 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       Algorithm = Algorithm_Selection.resolve(request.Algorithm, spec?.Algorithm),
       Experimental_Search_Node_Limit =
         request.Experimental_Search_Node_Limit ?? spec?.ExperimentalSearchNodeLimit ?? 10000,
+      Experimental_Restart_Count =
+        request.Experimental_Restart_Count ?? spec?.ExperimentalRestartCount ?? 4,
+      Experimental_Nogood_Limit =
+        request.Experimental_Nogood_Limit ?? spec?.ExperimentalNogoodLimit ?? 4096,
+      Experimental_Enable_Conflict_Learning =
+        request.Experimental_Enable_Conflict_Learning ?? spec?.ExperimentalEnableConflictLearning ?? true,
       Depth = request.Depth ?? spec?.Depth ?? 1,
       Seed = request.Seed ?? spec?.Seed,
     };
@@ -228,6 +234,12 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       Algorithm = algorithm,
       Experimental_Search_Node_Limit =
         request.Experimental_Search_Node_Limit ?? spec?.ExperimentalSearchNodeLimit ?? 10000,
+      Experimental_Restart_Count =
+        request.Experimental_Restart_Count ?? spec?.ExperimentalRestartCount ?? 4,
+      Experimental_Nogood_Limit =
+        request.Experimental_Nogood_Limit ?? spec?.ExperimentalNogoodLimit ?? 4096,
+      Experimental_Enable_Conflict_Learning =
+        request.Experimental_Enable_Conflict_Learning ?? spec?.ExperimentalEnableConflictLearning ?? true,
       Radius = request.Repair_Radius ?? spec?.RepairRadius ?? 0,
       Depth = request.Depth ?? spec?.Depth ?? 1,
       Seed = request.Seed ?? spec?.Seed,
@@ -308,6 +320,9 @@ internal sealed class Core_Cli_Executor : ICli_Executor
         Template = request.Template,
         Algorithm = request.Algorithm,
         Experimental_Search_Node_Limit = request.Experimental_Search_Node_Limit,
+        Experimental_Restart_Count = request.Experimental_Restart_Count,
+        Experimental_Nogood_Limit = request.Experimental_Nogood_Limit,
+        Experimental_Enable_Conflict_Learning = request.Experimental_Enable_Conflict_Learning,
         Depth = request.Depth,
         Seed = seed,
         Assets_Dir = request.Assets_Dir,
@@ -387,6 +402,9 @@ internal sealed class Core_Cli_Executor : ICli_Executor
         Height = request.Height,
         Algorithm = request.Algorithm,
         Experimental_Search_Node_Limit = request.Experimental_Search_Node_Limit,
+        Experimental_Restart_Count = request.Experimental_Restart_Count,
+        Experimental_Nogood_Limit = request.Experimental_Nogood_Limit,
+        Experimental_Enable_Conflict_Learning = request.Experimental_Enable_Conflict_Learning,
         Repair_Radius = request.Repair_Radius,
         Depth = request.Depth,
         Seed = request.Seed,

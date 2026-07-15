@@ -19,6 +19,23 @@ public sealed class Map_Generation_Options
   public int Experimental_Search_Node_Limit { get; init; } = 10000;
 
   /// <summary>
+  /// Number of deterministic experimental search restarts. The first restart prioritizes
+  /// best-partial search; later restarts prioritize complete conflict-directed search.
+  /// </summary>
+  public int Experimental_Restart_Count { get; init; } = 4;
+
+  /// <summary>
+  /// Maximum exact failed-assignment nogoods retained per component. Zero disables
+  /// nogood caching while preserving conflict-directed backjumping.
+  /// </summary>
+  public int Experimental_Nogood_Limit { get; init; } = 4096;
+
+  /// <summary>
+  /// Enables conflict-directed backjumping and exact nogood reuse in complete restarts.
+  /// </summary>
+  public bool Experimental_Enable_Conflict_Learning { get; init; } = true;
+
+  /// <summary>
   /// Lookahead depth for the neighbor-search backtracking algorithm. Must be 1 or 2
   /// (matches the GUI's DEPTH/MAX_DEPTH constants).
   /// </summary>

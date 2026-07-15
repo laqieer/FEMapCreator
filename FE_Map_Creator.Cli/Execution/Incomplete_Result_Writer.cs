@@ -25,8 +25,11 @@ internal static class Incomplete_Result_Writer
     Action<string> write_temporary)
   {
     string algorithm_suffix = Algorithm_Selection.suffix(result.Algorithm);
-    string search_suffix = result.Search_Budget_Exhausted
-      ? $", experimental search budget exhausted after {result.Search_Node_Count} node(s)"
+    string search_suffix = result.Algorithm == Map_Generation_Algorithm.Experimental_Constraint
+      ? $", {result.Search_Node_Count} search node(s), {result.Search_Restart_Count} restart(s), " +
+        $"{result.Nogood_Learned_Count} nogood(s) learned, {result.Nogood_Hit_Count} reused, " +
+        $"{result.Backjump_Count} backjump(s)" +
+        (result.Search_Budget_Exhausted ? ", search budget exhausted" : "")
       : "";
     if (require_complete && result.Unresolved_Tile_Count > 0)
     {

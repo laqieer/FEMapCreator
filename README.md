@@ -64,12 +64,17 @@ constraint solver with `--algorithm experimental`:
 FE_Map_Creator.Cli.exe generate --width 30 --height 20 --tileset "FE6 - Fields - 01020304" --output map.experimental.map --algorithm experimental --depth 2 --seed 12345
 ```
 
-The experimental solver globally backtracks to avoid greedy dead ends. It first builds a
-fast complete/partial incumbent, then explores up to 10,000 backtracking nodes by
-default. A zero-unresolved result is optimal; when the node budget is exhausted, the CLI
-reports that the returned incomplete result may not be minimal. Tune the limit with
-`--experimental-search-node-limit N`. The solver has exponential worst-case runtime, so
-it remains opt-in and cancellable. Use
+The experimental solver globally backtracks to avoid greedy dead ends. It splits open
+cells into independent components, applies arc-consistency propagation, orders
+candidates by remaining neighbor support plus learned corpus weights, and uses
+deterministic partial/complete restarts. Complete restarts use conflict-directed
+backjumping and a bounded exact nogood cache. The defaults are 10,000 total search nodes,
+4 restarts, and 4,096 retained nogoods; tune them with
+`--experimental-search-node-limit`, `--experimental-restarts`, and
+`--experimental-nogood-limit`. Use `--no-experimental-conflict-learning` for a
+chronological comparison. A zero-unresolved result is optimal; budget exhaustion is
+reported when an incomplete search is cut off. The worst case remains exponential, so
+the solver stays opt-in and cancellable. Use
 `--algorithm legacy` explicitly to override an experimental job spec. In WinForms, the
 unchecked **Map Generation > Experimental Constraint Solver** menu item controls both
 generation and repair for the current session.
@@ -159,6 +164,9 @@ FE_Map_Creator.Cli.exe batch --manifest manifest.json --fail-fast
   "output": "map.map",
   "algorithm": "experimental",
   "experimentalSearchNodeLimit": 10000,
+  "experimentalRestartCount": 4,
+  "experimentalNogoodLimit": 4096,
+  "experimentalEnableConflictLearning": true,
   "seed": 42,
   "depth": 1,
   "locked": [

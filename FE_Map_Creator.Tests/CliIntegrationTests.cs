@@ -92,6 +92,8 @@ public sealed class CliIntegrationTests
       "--output", direct_output,
       "--algorithm", "experimental",
       "--experimental-search-node-limit", "10000",
+      "--experimental-restarts", "5",
+      "--experimental-nogood-limit", "64",
       "--seed", "77");
 
     new Map_Job_Spec_Reader().write_job(spec_path, new Map_Job_Spec()
@@ -104,6 +106,8 @@ public sealed class CliIntegrationTests
       Output = "spec.map",
       Algorithm = "experimental",
       ExperimentalSearchNodeLimit = 10000,
+      ExperimentalRestartCount = 5,
+      ExperimentalNogoodLimit = 64,
       Seed = 77
     });
     Cli_Process_Result from_spec = await run_cli_async("generate", "--spec", spec_path);
@@ -118,6 +122,8 @@ public sealed class CliIntegrationTests
     assert_success(overridden);
     StringAssert.Contains(direct.Standard_Output, "using experimental algorithm");
     StringAssert.Contains(from_spec.Standard_Output, "using experimental algorithm");
+    StringAssert.Contains(direct.Standard_Output, "restart(s)");
+    StringAssert.Contains(direct.Standard_Output, "nogood(s) learned");
     Assert.IsFalse(overridden.Standard_Output.Contains("experimental algorithm", StringComparison.OrdinalIgnoreCase), overridden.describe());
     CollectionAssert.AreEqual(File.ReadAllBytes(direct_output), File.ReadAllBytes(spec_output));
   }
@@ -519,6 +525,20 @@ public sealed class CliIntegrationTests
       "--input", map,
       "--output", directory.path("bad-radius.map"),
       "--repair-radius=-1");
+    Cli_Process_Result invalid_restarts = await run_cli_async(
+      "generate",
+      "--width", "1",
+      "--height", "1",
+      "--tileset", "01020304",
+      "--output", directory.path("bad-restarts.map"),
+      "--experimental-restarts", "0");
+    Cli_Process_Result invalid_nogood_limit = await run_cli_async(
+      "generate",
+      "--width", "1",
+      "--height", "1",
+      "--tileset", "01020304",
+      "--output", directory.path("bad-nogoods.map"),
+      "--experimental-nogood-limit=-1");
     Cli_Process_Result conflicting_flags = await run_cli_async(
       "generate",
       "--width", "1",
@@ -538,6 +558,8 @@ public sealed class CliIntegrationTests
 
     assert_error(invalid_depth, "--depth must be 1 or 2.");
     assert_error(invalid_radius, "--repair-radius must be zero or greater.");
+    assert_error(invalid_restarts, "--experimental-restarts must be a positive number.");
+    assert_error(invalid_nogood_limit, "--experimental-nogood-limit must be zero or greater.");
     assert_error(conflicting_flags, "--allow-incomplete and --require-complete cannot both be specified.");
     assert_error(missing_mar_metadata, "requires positive width, positive height, and a tileset identifier");
     assert_error(unsupported_zstd_tmx, "encoding \"base64\" with compression \"zstd\" is not supported.");

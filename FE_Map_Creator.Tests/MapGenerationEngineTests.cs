@@ -550,6 +550,29 @@ public sealed class MapGenerationEngineTests
   }
 
   [TestMethod]
+  public void ExperimentalRejectsInvalidRestartAndNogoodSettings()
+  {
+    Map_Generation_Engine engine = new Map_Generation_Engine(create_uniform_data(1));
+
+    Assert.Throws<ArgumentOutOfRangeException>(() =>
+      engine.generate(
+        blank_state(1, 1),
+        new Map_Generation_Options()
+        {
+          Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+          Experimental_Restart_Count = 0
+        }));
+    Assert.Throws<ArgumentOutOfRangeException>(() =>
+      engine.generate(
+        blank_state(1, 1),
+        new Map_Generation_Options()
+        {
+          Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+          Experimental_Nogood_Limit = -1
+        }));
+  }
+
+  [TestMethod]
   public void ExperimentalImpossibleTerrainReturnsMinimumOpenCells()
   {
     Data_Tileset metadata = new Data_Tileset()
@@ -762,6 +785,116 @@ public sealed class MapGenerationEngineTests
     for (int index = 1; index < progress.Values.Count; ++index)
       Assert.IsGreaterThanOrEqualTo(progress.Values[index - 1], progress.Values[index]);
     Assert.AreEqual(13, progress.Values[^1]);
+  }
+
+  [TestMethod]
+  public void ExperimentalConflictLearningReusesExactNogoods()
+  {
+    Tileset_Generation_Data data = create_parity_cycle_data(include_tail: false);
+    Data_Tileset metadata = create_parity_cycle_metadata(include_tail: false);
+    Map_State learned_state = create_parity_cycle_state(include_tail: false);
+    Map_State chronological_state = create_parity_cycle_state(include_tail: false);
+
+    Map_Generation_Result learned = new Map_Generation_Engine(data, metadata).generate(
+      learned_state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Experimental_Search_Node_Limit = 200,
+        Experimental_Restart_Count = 4,
+        Experimental_Nogood_Limit = 8,
+        Experimental_Enable_Conflict_Learning = true,
+        Seed = 29
+      });
+    Map_Generation_Result chronological = new Map_Generation_Engine(data, metadata).generate(
+      chronological_state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Experimental_Search_Node_Limit = 200,
+        Experimental_Restart_Count = 4,
+        Experimental_Nogood_Limit = 0,
+        Experimental_Enable_Conflict_Learning = false,
+        Seed = 29
+      });
+
+    Assert.AreEqual(learned.Unresolved_Tile_Count, chronological.Unresolved_Tile_Count);
+    Assert.IsGreaterThan(0, learned.Nogood_Learned_Count);
+    Assert.IsGreaterThan(0, learned.Nogood_Hit_Count);
+    Assert.IsLessThanOrEqualTo(8, learned.Nogood_Retained_Count);
+    Assert.IsLessThan(chronological.Search_Node_Count, learned.Search_Node_Count);
+  }
+
+  [TestMethod]
+  public void ExperimentalConflictSearchBackjumpsPastIrrelevantAssignments()
+  {
+    Tileset_Generation_Data data = create_parity_cycle_data(include_tail: true);
+    Data_Tileset metadata = create_parity_cycle_metadata(include_tail: true);
+    bool observed_backjump = false;
+
+    for (int seed = 0; seed < 64 && !observed_backjump; ++seed)
+    {
+      Map_Generation_Result result = new Map_Generation_Engine(data, metadata).generate(
+        create_parity_cycle_state(include_tail: true),
+        new Map_Generation_Options()
+        {
+          Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+          Experimental_Search_Node_Limit = 200,
+          Experimental_Restart_Count = 3,
+          Experimental_Nogood_Limit = 32,
+          Experimental_Enable_Conflict_Learning = true,
+          Seed = seed
+        });
+      observed_backjump = result.Backjump_Count > 0;
+    }
+
+    Assert.IsTrue(observed_backjump, "No deterministic seed exercised a conflict-directed backjump.");
+  }
+
+  [TestMethod]
+  public void ExperimentalLaterRestartCanCompleteAfterShortPartialRestart()
+  {
+    Tileset_Generation_Data data = create_depth_fixture_data();
+    Map_State state = depth_fixture_state();
+    Map_Generation_Result result = new Map_Generation_Engine(data).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Experimental_Search_Node_Limit = 10,
+        Experimental_Restart_Count = 2,
+        Seed = 30
+      });
+
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    Assert.AreEqual(2, result.Search_Restart_Count);
+    Assert.AreEqual(1, result.Components[0].Best_Restart);
+    Assert.IsLessThanOrEqualTo(10, result.Search_Node_Count);
+    assert_horizontal_adjacency(data, state);
+  }
+
+  [TestMethod]
+  public void ExperimentalRestartConfigurationIsDeterministic()
+  {
+    Tileset_Generation_Data data = create_connected_data(1, 2);
+    Map_State first = blank_state(6, 5);
+    Map_State second = blank_state(6, 5);
+    Map_Generation_Options options = new Map_Generation_Options()
+    {
+      Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+      Experimental_Search_Node_Limit = 100,
+      Experimental_Restart_Count = 5,
+      Experimental_Nogood_Limit = 16,
+      Seed = 31
+    };
+
+    Map_Generation_Result first_result = new Map_Generation_Engine(data).generate(first, options);
+    Map_Generation_Result second_result = new Map_Generation_Engine(data).generate(second, options);
+
+    CollectionAssert.AreEqual(first.Tiles.Cast<int>().ToArray(), second.Tiles.Cast<int>().ToArray());
+    Assert.AreEqual(first_result.Search_Node_Count, second_result.Search_Node_Count);
+    Assert.AreEqual(first_result.Search_Restart_Count, second_result.Search_Restart_Count);
+    Assert.AreEqual(first_result.Nogood_Hit_Count, second_result.Nogood_Hit_Count);
   }
 
   [TestMethod]
@@ -1032,6 +1165,61 @@ public sealed class MapGenerationEngineTests
     data.generation_data[5] = create_tile_data((4, 3, 1), (6, 6, 1));
     data.generation_data[6] = create_tile_data((4, 5, 1));
     return data;
+  }
+
+  private static Tileset_Generation_Data create_parity_cycle_data(bool include_tail)
+  {
+    Tileset_Generation_Data data = create_generation_data();
+    int tile_count = include_tail ? 10 : 8;
+    for (int tile = 1; tile <= tile_count; ++tile)
+      data.generation_data[tile] = new Tile_Data();
+
+    add_edge(data, 1, 6, 3);
+    add_edge(data, 2, 6, 4);
+    add_edge(data, 3, 2, 5);
+    add_edge(data, 4, 2, 6);
+    add_edge(data, 7, 6, 5);
+    add_edge(data, 8, 6, 6);
+    add_edge(data, 1, 2, 8);
+    add_edge(data, 2, 2, 7);
+    if (include_tail)
+    {
+      add_edge(data, 3, 6, 9);
+      add_edge(data, 4, 6, 10);
+    }
+    return data;
+  }
+
+  private static void add_edge(Tileset_Generation_Data data, short source, byte direction, short target)
+  {
+    data.generation_data[source].Valid_Tile_Priority[direction][target] = 1;
+    data.generation_data[target].Valid_Tile_Priority[(byte) (10 - direction)][source] = 1;
+  }
+
+  private static Data_Tileset create_parity_cycle_metadata(bool include_tail)
+  {
+    List<int> tags = new List<int>() { 0, 1, 1, 2, 2, 3, 3, 4, 4 };
+    if (include_tail)
+      tags.AddRange(new int[] { 5, 5 });
+    return new Data_Tileset() { Terrain_Tags = tags };
+  }
+
+  private static Map_State create_parity_cycle_state(bool include_tail)
+  {
+    int width = include_tail ? 3 : 2;
+    Map_State state = blank_state(width, 2);
+    state.Terrain[0, 0] = 1;
+    state.Terrain[1, 0] = 2;
+    state.Terrain[1, 1] = 3;
+    state.Terrain[0, 1] = 4;
+    if (include_tail)
+    {
+      state.Terrain[2, 0] = 5;
+      state.Tiles[2, 1] = 99;
+      state.Drawn[2, 1] = true;
+      state.Locked[2, 1] = true;
+    }
+    return state;
   }
 
   private static Tile_Data create_tile_data(params (byte Direction, short Tile, short Weight)[] edges)

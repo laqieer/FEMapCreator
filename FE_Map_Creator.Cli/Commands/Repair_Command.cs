@@ -27,6 +27,9 @@ internal static class Repair_Command
     Option<string> spec_option = Common_Options.spec();
     Option<string> algorithm_option = Common_Options.algorithm();
     Option<int> experimental_search_node_limit_option = Common_Options.experimental_search_node_limit();
+    Option<int> experimental_restarts_option = Common_Options.experimental_restarts();
+    Option<int> experimental_nogood_limit_option = Common_Options.experimental_nogood_limit();
+    Option<bool> no_experimental_conflict_learning_option = Common_Options.no_experimental_conflict_learning();
     Option<string> tileset_option = Common_Options.tileset();
     Option<int?> width_option = Common_Options.width();
     Option<int?> height_option = Common_Options.height();
@@ -73,6 +76,9 @@ internal static class Repair_Command
       spec_option,
       algorithm_option,
       experimental_search_node_limit_option,
+      experimental_restarts_option,
+      experimental_nogood_limit_option,
+      no_experimental_conflict_learning_option,
       tileset_option,
       width_option,
       height_option,
@@ -105,6 +111,8 @@ internal static class Repair_Command
       int repair_radius = Cli_Validation.bound_value(result, repair_radius_option);
       int depth = Cli_Validation.bound_value(result, depth_option);
       int experimental_search_node_limit = Cli_Validation.bound_value(result, experimental_search_node_limit_option);
+      int experimental_restarts = Cli_Validation.bound_value(result, experimental_restarts_option);
+      int experimental_nogood_limit = Cli_Validation.bound_value(result, experimental_nogood_limit_option);
       bool allow_incomplete = result.GetValue(allow_incomplete_option);
       bool require_complete = result.GetValue(require_complete_option);
 
@@ -113,6 +121,8 @@ internal static class Repair_Command
       Cli_Validation.non_negative(result, repair_radius, "--repair-radius");
       Cli_Validation.valid_depth(result, depth);
       Cli_Validation.positive(result, experimental_search_node_limit, "--experimental-search-node-limit");
+      Cli_Validation.positive(result, experimental_restarts, "--experimental-restarts");
+      Cli_Validation.non_negative(result, experimental_nogood_limit, "--experimental-nogood-limit");
       Cli_Validation.mutually_exclusive_flags(
         result, allow_incomplete, "--allow-incomplete", require_complete, "--require-complete");
 
@@ -149,6 +159,12 @@ internal static class Repair_Command
         Spec = parse_result.GetValue(spec_option),
         Algorithm = Cli_Binding.explicit_value_or_null(parse_result, algorithm_option),
         Experimental_Search_Node_Limit = Cli_Binding.explicit_value_or_null(parse_result, experimental_search_node_limit_option),
+        Experimental_Restart_Count = Cli_Binding.explicit_value_or_null(parse_result, experimental_restarts_option),
+        Experimental_Nogood_Limit = Cli_Binding.explicit_value_or_null(parse_result, experimental_nogood_limit_option),
+        Experimental_Enable_Conflict_Learning =
+          Cli_Binding.explicit_value_or_null(parse_result, no_experimental_conflict_learning_option) is bool no_conflict
+            ? !no_conflict
+            : null,
         Tileset = parse_result.GetValue(tileset_option),
         Width = parse_result.GetValue(width_option),
         Height = parse_result.GetValue(height_option),

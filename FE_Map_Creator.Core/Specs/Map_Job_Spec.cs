@@ -33,6 +33,12 @@ public sealed class Map_Job_Spec
 
   public int? ExperimentalSearchNodeLimit { get; set; }
 
+  public int? ExperimentalRestartCount { get; set; }
+
+  public int? ExperimentalNogoodLimit { get; set; }
+
+  public bool? ExperimentalEnableConflictLearning { get; set; }
+
   public int? Depth { get; set; }
 
   public int? RepairRadius { get; set; }
@@ -50,6 +56,10 @@ public sealed class Map_Job_Spec
     validate_algorithm();
     if (this.ExperimentalSearchNodeLimit.HasValue && this.ExperimentalSearchNodeLimit.Value <= 0)
       throw new InvalidOperationException("ExperimentalSearchNodeLimit must be positive.");
+    if (this.ExperimentalRestartCount.HasValue && this.ExperimentalRestartCount.Value <= 0)
+      throw new InvalidOperationException("ExperimentalRestartCount must be positive.");
+    if (this.ExperimentalNogoodLimit.HasValue && this.ExperimentalNogoodLimit.Value < 0)
+      throw new InvalidOperationException("ExperimentalNogoodLimit must be zero or greater.");
     validate_optional_dimensions();
     Matrix_Dimensions? dimensions = null;
     dimensions = validate_rectangular_rows(this.Drawn, nameof (this.Drawn), dimensions);

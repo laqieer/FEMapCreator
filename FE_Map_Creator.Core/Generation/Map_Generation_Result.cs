@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 #nullable disable
 namespace FE_Map_Creator.Generation;
@@ -38,6 +39,16 @@ public sealed class Map_Generation_Result
   public int Propagation_Removal_Count { get; }
 
   public IReadOnlyList<Map_Generation_Component_Result> Components { get; }
+
+  public int Search_Restart_Count => this.Components.Sum(component => component.Restart_Count);
+
+  public int Nogood_Learned_Count => this.Components.Sum(component => component.Nogood_Learned_Count);
+
+  public int Nogood_Retained_Count => this.Components.Sum(component => component.Nogood_Retained_Count);
+
+  public int Nogood_Hit_Count => this.Components.Sum(component => component.Nogood_Hit_Count);
+
+  public int Backjump_Count => this.Components.Sum(component => component.Backjump_Count);
 
   /// <summary>
   /// The random seed actually used for this run (either the one supplied in the

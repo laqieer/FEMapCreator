@@ -65,11 +65,16 @@ public sealed class Map_Generation_Engine
     if (options.Algorithm == Map_Generation_Algorithm.Experimental_Constraint)
     {
       validate_search_node_limit(options.Experimental_Search_Node_Limit);
+      validate_restart_count(options.Experimental_Restart_Count);
+      validate_nogood_limit(options.Experimental_Nogood_Limit);
       return new Experimental_Map_Generation_Solver(this._tileset_generation_data, this._terrain_tileset)
         .generate(
           state,
           options.Depth,
           options.Experimental_Search_Node_Limit,
+          options.Experimental_Restart_Count,
+          options.Experimental_Nogood_Limit,
+          options.Experimental_Enable_Conflict_Learning,
           seed,
           cancellation_token,
           tile_drawn,
@@ -105,12 +110,17 @@ public sealed class Map_Generation_Engine
     if (options.Algorithm == Map_Generation_Algorithm.Experimental_Constraint)
     {
       validate_search_node_limit(options.Experimental_Search_Node_Limit);
+      validate_restart_count(options.Experimental_Restart_Count);
+      validate_nogood_limit(options.Experimental_Nogood_Limit);
       return new Experimental_Map_Generation_Solver(this._tileset_generation_data, this._terrain_tileset)
         .repair(
           state,
           options.Depth,
           options.Radius,
           options.Experimental_Search_Node_Limit,
+          options.Experimental_Restart_Count,
+          options.Experimental_Nogood_Limit,
+          options.Experimental_Enable_Conflict_Learning,
           seed,
           cancellation_token,
           tile_drawn,
@@ -140,6 +150,18 @@ public sealed class Map_Generation_Engine
   {
     if (search_node_limit <= 0)
       throw new ArgumentOutOfRangeException(nameof(search_node_limit), search_node_limit, "Experimental search node limit must be positive.");
+  }
+
+  private static void validate_restart_count(int restart_count)
+  {
+    if (restart_count <= 0)
+      throw new ArgumentOutOfRangeException(nameof(restart_count), restart_count, "Experimental restart count must be positive.");
+  }
+
+  private static void validate_nogood_limit(int nogood_limit)
+  {
+    if (nogood_limit < 0)
+      throw new ArgumentOutOfRangeException(nameof(nogood_limit), nogood_limit, "Experimental nogood limit must be zero or greater.");
   }
 
   private static Random create_random(int? seed, out int actual_seed)

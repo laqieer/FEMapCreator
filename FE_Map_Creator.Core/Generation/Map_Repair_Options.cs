@@ -18,6 +18,12 @@ public sealed class Map_Repair_Options
   /// </summary>
   public int Experimental_Search_Node_Limit { get; init; } = 10000;
 
+  public int Experimental_Restart_Count { get; init; } = 4;
+
+  public int Experimental_Nogood_Limit { get; init; } = 4096;
+
+  public bool Experimental_Enable_Conflict_Learning { get; init; } = true;
+
   /// <summary>
   /// Manhattan-distance radius (in tiles) around every terrain-incompatible or
   /// already-empty (tile index 0) cell that gets reopened for regeneration. Must be

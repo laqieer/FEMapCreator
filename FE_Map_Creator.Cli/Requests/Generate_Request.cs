@@ -30,6 +30,12 @@ internal sealed class Generate_Request
 
   internal int? Experimental_Search_Node_Limit { get; init; }
 
+  internal int? Experimental_Restart_Count { get; init; }
+
+  internal int? Experimental_Nogood_Limit { get; init; }
+
+  internal bool? Experimental_Enable_Conflict_Learning { get; init; }
+
   /// <summary>
   /// Null when <c>--depth</c> was not explicitly typed on the command line, so a
   /// spec-supplied depth can still take effect; the executor falls back to 1 when

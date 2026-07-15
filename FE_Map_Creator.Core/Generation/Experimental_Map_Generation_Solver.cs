@@ -27,6 +27,9 @@ internal sealed class Experimental_Map_Generation_Solver
     Map_State state,
     int depth,
     int search_node_limit,
+    int restart_count,
+    int nogood_limit,
+    bool enable_conflict_learning,
     int seed,
     CancellationToken cancellation_token,
     Tile_Drawn_Callback tile_drawn,
@@ -38,6 +41,9 @@ internal sealed class Experimental_Map_Generation_Solver
       working,
       depth,
       search_node_limit,
+      restart_count,
+      nogood_limit,
+      enable_conflict_learning,
       seed,
       cancellation_token,
       tile_drawn,
@@ -49,6 +55,9 @@ internal sealed class Experimental_Map_Generation_Solver
     int depth,
     int radius,
     int search_node_limit,
+    int restart_count,
+    int nogood_limit,
+    bool enable_conflict_learning,
     int seed,
     CancellationToken cancellation_token,
     Tile_Drawn_Callback tile_drawn,
@@ -62,6 +71,9 @@ internal sealed class Experimental_Map_Generation_Solver
       working,
       depth,
       search_node_limit,
+      restart_count,
+      nogood_limit,
+      enable_conflict_learning,
       seed,
       cancellation_token,
       tile_drawn,
@@ -73,6 +85,9 @@ internal sealed class Experimental_Map_Generation_Solver
     Map_State working,
     int depth,
     int search_node_limit,
+    int restart_count,
+    int nogood_limit,
+    bool enable_conflict_learning,
     int seed,
     CancellationToken cancellation_token,
     Tile_Drawn_Callback tile_drawn,
@@ -85,6 +100,13 @@ internal sealed class Experimental_Map_Generation_Solver
     int[] component_node_limits = new int[components.Count];
     int[] component_node_counts = new int[components.Count];
     int[] component_propagation_removals = new int[components.Count];
+    int[] component_restart_counts = new int[components.Count];
+    int[] component_best_restarts = Enumerable.Repeat(-1, components.Count).ToArray();
+    int[] component_nogood_counts = new int[components.Count];
+    int[] component_nogood_retained = new int[components.Count];
+    int[] component_nogood_hits = new int[components.Count];
+    int[] component_backjump_counts = new int[components.Count];
+    bool[] component_restart_exhausted = new bool[components.Count];
     List<Cell> unresolved = new List<Cell>();
     int progress_offset = 0;
     int[] solve_order = Enumerable.Range(0, components.Count)
@@ -97,22 +119,78 @@ internal sealed class Experimental_Map_Generation_Solver
       int component_index = solve_order[order_index];
       Cell[] component = components[component_index];
       int component_budget = remaining_budget;
-      Random component_random = new Random(derive_seed(seed, component_index));
-      Search search = new Search(
-        this._model,
-        working,
-        component,
-        depth,
-        component_budget,
-        component_random,
-        cancellation_token,
-        progress == null ? null : new Component_Progress(progress, progress_offset));
-      Search_Result search_result = search.solve();
-      search_results[component_index] = search_result;
-      component_node_limits[component_index] += component_budget;
-      component_node_counts[component_index] += search_result.Search_Node_Count;
-      component_propagation_removals[component_index] += search_result.Propagation_Removal_Count;
-      remaining_budget -= search_result.Search_Node_Count;
+      component_node_limits[component_index] = component_budget;
+      int component_remaining = component_budget;
+      Nogood_Cache nogoods = new Nogood_Cache(nogood_limit);
+      Search_Result best_result = null;
+      int best_unresolved = int.MaxValue;
+      for (int restart = 0; restart < restart_count && component_remaining > 0; ++restart)
+      {
+        int restarts_left = restart_count - restart;
+        int restart_budget;
+        if (restart == 0 && restart_count > 1)
+          restart_budget = Math.Min(component_remaining, Math.Max(1, component_budget / 10));
+        else if (restart + 1 == restart_count)
+          restart_budget = component_remaining;
+        else
+          restart_budget = Math.Max(1, (component_remaining + restarts_left - 1) / restarts_left);
+        Search_Mode mode = restart == 0 || restart + 1 == restart_count && restart_count > 2
+          ? Search_Mode.Partial
+          : Search_Mode.Complete;
+        Random restart_random = new Random(derive_seed(seed, component_index, restart));
+        Search search = new Search(
+          this._model,
+          working,
+          component,
+          depth,
+          restart_budget,
+          mode,
+          nogoods,
+          enable_conflict_learning,
+          restart_random,
+          cancellation_token,
+          progress == null || restart > 0 ? null : new Component_Progress(progress, progress_offset));
+        Search_Result restart_result = search.solve();
+        ++component_restart_counts[component_index];
+        component_node_counts[component_index] += restart_result.Search_Node_Count;
+        component_propagation_removals[component_index] += restart_result.Propagation_Removal_Count;
+        component_nogood_counts[component_index] += restart_result.Nogood_Learned_Count;
+        component_nogood_hits[component_index] += restart_result.Nogood_Hit_Count;
+        component_backjump_counts[component_index] += restart_result.Backjump_Count;
+        component_restart_exhausted[component_index] |= restart_result.Search_Budget_Exhausted;
+        component_remaining -= restart_result.Search_Node_Count;
+        remaining_budget -= restart_result.Search_Node_Count;
+        int restart_unresolved = restart_result.Assignments.Count(assignment => assignment < 0);
+        if (restart_unresolved < best_unresolved)
+        {
+          best_result = restart_result;
+          best_unresolved = restart_unresolved;
+          component_best_restarts[component_index] = restart;
+        }
+        if (restart_unresolved == 0)
+          break;
+      }
+      if (best_result == null)
+      {
+        Search search = new Search(
+          this._model,
+          working,
+          component,
+          depth,
+          0,
+          Search_Mode.Partial,
+          nogoods,
+          enable_conflict_learning,
+          new Random(derive_seed(seed, component_index, 0)),
+          cancellation_token,
+          null);
+        best_result = search.solve();
+        component_restart_counts[component_index] = 1;
+        component_best_restarts[component_index] = 0;
+        component_restart_exhausted[component_index] = best_result.Search_Budget_Exhausted;
+      }
+      search_results[component_index] = best_result;
+      component_nogood_retained[component_index] = nogoods.Count;
       progress_offset += component.Length;
       progress?.Report(progress_offset);
     }
@@ -145,7 +223,9 @@ internal sealed class Experimental_Map_Generation_Solver
           working.Drawn[cell.X, cell.Y] = true;
         }
       }
-      bool component_exhausted = search_result.Search_Budget_Exhausted;
+      bool component_exhausted = component_unresolved > 0
+        && component_restart_exhausted[component_index]
+        && component_node_counts[component_index] >= component_node_limits[component_index];
       component_results[component_index] = new Map_Generation_Component_Result(
         component[0],
         component.Length,
@@ -153,10 +233,16 @@ internal sealed class Experimental_Map_Generation_Solver
         component_node_limits[component_index],
         component_node_counts[component_index],
         component_exhausted,
-        component_propagation_removals[component_index]);
+        component_propagation_removals[component_index],
+        component_restart_counts[component_index],
+        component_best_restarts[component_index],
+        component_nogood_counts[component_index],
+        component_nogood_retained[component_index],
+        component_nogood_hits[component_index],
+        component_backjump_counts[component_index]);
     }
     bool search_budget_exhausted =
-      search_results.Any(result => result.Search_Budget_Exhausted);
+      component_results.Any(result => result.Search_Budget_Exhausted);
 
     cancellation_token.ThrowIfCancellationRequested();
     for (int y = 0; y < destination.Height; ++y)
@@ -243,7 +329,13 @@ internal sealed class Experimental_Map_Generation_Solver
 
   private static int derive_seed(int seed, int component_index)
   {
-    ulong value = (uint) seed + 0x9E3779B97F4A7C15UL * (ulong) (component_index + 1);
+    return derive_seed(seed, component_index, 0);
+  }
+
+  private static int derive_seed(int seed, int component_index, int restart_index)
+  {
+    ulong stream = (ulong) (component_index + 1) << 32 | (uint) (restart_index + 1);
+    ulong value = (uint) seed + 0x9E3779B97F4A7C15UL * stream;
     value ^= value >> 30;
     value *= 0xBF58476D1CE4E5B9UL;
     value ^= value >> 27;
@@ -324,6 +416,45 @@ internal sealed class Experimental_Map_Generation_Solver
       (int[,]) state.Terrain.Clone());
   }
 
+  private enum Search_Mode
+  {
+    Partial,
+    Complete,
+  }
+
+  private sealed class Nogood_Cache
+  {
+    private readonly int _capacity;
+    private readonly Dictionary<string, int[]> _conflicts = new Dictionary<string, int[]>();
+    private readonly Queue<string> _order = new Queue<string>();
+
+    internal int Count => this._conflicts.Count;
+
+    internal Nogood_Cache(int capacity)
+    {
+      this._capacity = capacity;
+    }
+
+    internal bool try_get(string key, out int[] conflict)
+    {
+      return this._conflicts.TryGetValue(key, out conflict);
+    }
+
+    internal bool add(string key, IEnumerable<int> conflict)
+    {
+      if (this._capacity <= 0 || this._conflicts.ContainsKey(key))
+        return false;
+      while (this._conflicts.Count >= this._capacity)
+      {
+        string oldest = this._order.Dequeue();
+        this._conflicts.Remove(oldest);
+      }
+      this._conflicts.Add(key, conflict.Distinct().OrderBy(value => value).ToArray());
+      this._order.Enqueue(key);
+      return true;
+    }
+  }
+
   private sealed class Search
   {
     private const int Unassigned = -2;
@@ -333,6 +464,9 @@ internal sealed class Experimental_Map_Generation_Solver
     private readonly Map_State _state;
     private readonly int _depth;
     private readonly int _search_node_limit;
+    private readonly Search_Mode _mode;
+    private readonly Nogood_Cache _nogoods;
+    private readonly bool _enable_conflict_learning;
     private readonly Random _random;
     private readonly CancellationToken _cancellation_token;
     private readonly IProgress<int> _progress;
@@ -353,6 +487,9 @@ internal sealed class Experimental_Map_Generation_Solver
     private int _search_node_count;
     private bool _search_budget_exhausted;
     private int _propagation_removal_count;
+    private int _nogood_learned_count;
+    private int _nogood_hit_count;
+    private int _backjump_count;
 
     internal Search(
       Experimental_Tile_Model model,
@@ -360,6 +497,9 @@ internal sealed class Experimental_Map_Generation_Solver
       Cell[] cells,
       int depth,
       int search_node_limit,
+      Search_Mode mode,
+      Nogood_Cache nogoods,
+      bool enable_conflict_learning,
       Random random,
       CancellationToken cancellation_token,
       IProgress<int> progress)
@@ -368,6 +508,9 @@ internal sealed class Experimental_Map_Generation_Solver
       this._state = state;
       this._depth = depth;
       this._search_node_limit = search_node_limit;
+      this._mode = mode;
+      this._nogoods = nogoods ?? throw new ArgumentNullException(nameof(nogoods));
+      this._enable_conflict_learning = enable_conflict_learning;
       this._random = random;
       this._cancellation_token = cancellation_token;
       this._progress = progress;
@@ -391,13 +534,18 @@ internal sealed class Experimental_Map_Generation_Solver
     internal Search_Result solve()
     {
       if (this._cells.Length == 0)
-        return new Search_Result(this._cells, Array.Empty<int>(), false, 0, 0);
+        return new Search_Result(this._cells, Array.Empty<int>(), false, 0, 0, 0, 0, 0);
 
       this.build_greedy_incumbent();
-      if (this._best_unresolved > 0)
+      if (this._best_unresolved > 0 && this._mode == Search_Mode.Complete)
         this.try_propagated_greedy_complete();
       if (this._best_unresolved > 0 && this._search_node_limit > 0)
-        this.search(0, 0);
+      {
+        if (this._mode == Search_Mode.Complete)
+          this.search_complete_conflict();
+        else
+          this.search(0, 0);
+      }
       else if (this._best_unresolved > 0 && this._search_node_limit == 0)
         this._search_budget_exhausted = true;
       if (this._best_assignments == null)
@@ -407,7 +555,10 @@ internal sealed class Experimental_Map_Generation_Solver
         this._best_assignments,
         this._search_budget_exhausted,
         this._search_node_count,
-        this._propagation_removal_count);
+        this._propagation_removal_count,
+        this._nogood_learned_count,
+        this._nogood_hit_count,
+        this._backjump_count);
     }
 
     private void initialize_domains()
@@ -621,6 +772,199 @@ internal sealed class Experimental_Map_Generation_Solver
       }
     }
 
+    private void search_complete_conflict()
+    {
+      Complete_Outcome outcome = this.complete_search();
+      if (!outcome.Success)
+        return;
+      this._best_unresolved = 0;
+      this._best_assignments = outcome.Solution;
+    }
+
+    private Complete_Outcome complete_search()
+    {
+      this._cancellation_token.ThrowIfCancellationRequested();
+      if (this._search_node_count >= this._search_node_limit)
+      {
+        this._search_budget_exhausted = true;
+        return Complete_Outcome.budget();
+      }
+      ++this._search_node_count;
+
+      string key = this.assignment_key();
+      if (this._enable_conflict_learning && this._nogoods.try_get(key, out int[] cached_conflict))
+      {
+        ++this._nogood_hit_count;
+        return Complete_Outcome.failure(cached_conflict);
+      }
+
+      int variable = this.select_complete_variable(out List<int> candidates);
+      if (variable < 0)
+        return Complete_Outcome.success((int[]) this._assignments.Clone());
+      if (candidates.Count == 0)
+      {
+        HashSet<int> conflict = this.assigned_neighbor_conflict(variable);
+        this.learn_nogood(key, conflict);
+        return Complete_Outcome.failure(conflict);
+      }
+
+      HashSet<int> accumulated_conflict = this.assigned_neighbor_conflict(variable);
+      foreach (int candidate in this.ordered_complete_candidates(variable, candidates))
+      {
+        this._assignments[variable] = candidate;
+        Complete_Outcome child = this.complete_search();
+        this._assignments[variable] = Unassigned;
+        if (child.Success || child.Budget_Exhausted)
+          return child;
+        if (this._enable_conflict_learning && !child.Conflict.Contains(variable))
+        {
+          ++this._backjump_count;
+          return child;
+        }
+        foreach (int conflict_variable in child.Conflict)
+        {
+          if (conflict_variable != variable)
+            accumulated_conflict.Add(conflict_variable);
+        }
+      }
+
+      this.learn_nogood(key, accumulated_conflict);
+      return Complete_Outcome.failure(accumulated_conflict);
+    }
+
+    private int select_complete_variable(out List<int> selected_candidates)
+    {
+      int minimum_count = int.MaxValue;
+      short maximum_priority = short.MinValue;
+      List<int> variables = new List<int>();
+      selected_candidates = null;
+      for (int variable = 0; variable < this._cells.Length; ++variable)
+      {
+        if (this._assignments[variable] != Unassigned)
+          continue;
+        List<int> candidates = this.complete_candidates(variable);
+        int count = candidates.Count;
+        short priority = this.neighbor_priority(variable);
+        if (count < minimum_count || count == minimum_count && priority > maximum_priority)
+        {
+          minimum_count = count;
+          maximum_priority = priority;
+          variables.Clear();
+          variables.Add(variable);
+        }
+        else if (count == minimum_count && priority == maximum_priority)
+          variables.Add(variable);
+      }
+      if (variables.Count == 0)
+      {
+        selected_candidates = new List<int>();
+        return -1;
+      }
+      int selected = variables[this._random.Next(variables.Count)];
+      selected_candidates = this.complete_candidates(selected);
+      return selected;
+    }
+
+    private List<int> complete_candidates(int variable)
+    {
+      List<int> candidates = new List<int>();
+      Cell cell = this._cells[variable];
+      foreach (int candidate in enumerate_candidates(this._domains[variable]))
+      {
+        bool valid = true;
+        foreach (byte direction in Directions)
+        {
+          Cell neighbor = neighbor_cell(cell, direction);
+          if (this._state.is_off_map(neighbor.X, neighbor.Y))
+            continue;
+          int neighbor_variable = this.variable_at(neighbor.X, neighbor.Y);
+          if (neighbor_variable < 0)
+            continue;
+          int neighbor_assignment = this._assignments[neighbor_variable];
+          if (neighbor_assignment >= 0 && !this._model.allows(candidate, direction, neighbor_assignment))
+          {
+            valid = false;
+            break;
+          }
+        }
+        if (valid)
+          candidates.Add(candidate);
+      }
+      return candidates;
+    }
+
+    private List<int> ordered_complete_candidates(int variable, IEnumerable<int> candidates)
+    {
+      List<Weighted_Candidate> weighted = new List<Weighted_Candidate>();
+      foreach (int candidate in candidates)
+      {
+        int support = this.complete_candidate_support(variable, candidate);
+        long weight = this.candidate_weight(variable, candidate);
+        double sample = Math.Max(double.Epsilon, this._random.NextDouble());
+        weighted.Add(new Weighted_Candidate(candidate, support, -Math.Log(sample) / weight));
+      }
+      return weighted
+        .OrderByDescending(candidate => candidate.Support)
+        .ThenBy(candidate => candidate.Key)
+        .ThenBy(candidate => candidate.Candidate)
+        .Select(candidate => candidate.Candidate)
+        .ToList();
+    }
+
+    private int complete_candidate_support(int variable, int candidate)
+    {
+      int support = 0;
+      Cell cell = this._cells[variable];
+      foreach (byte direction in Directions)
+      {
+        Cell neighbor = neighbor_cell(cell, direction);
+        if (this._state.is_off_map(neighbor.X, neighbor.Y))
+          continue;
+        int neighbor_variable = this.variable_at(neighbor.X, neighbor.Y);
+        if (neighbor_variable < 0 || this._assignments[neighbor_variable] != Unassigned)
+          continue;
+        foreach (int neighbor_candidate in this.complete_candidates(neighbor_variable))
+        {
+          if (this._model.allows(candidate, direction, neighbor_candidate))
+            ++support;
+        }
+      }
+      return support;
+    }
+
+    private HashSet<int> assigned_neighbor_conflict(int variable)
+    {
+      HashSet<int> conflict = new HashSet<int>();
+      Cell cell = this._cells[variable];
+      foreach (byte direction in Directions)
+      {
+        Cell neighbor = neighbor_cell(cell, direction);
+        if (this._state.is_off_map(neighbor.X, neighbor.Y))
+          continue;
+        int neighbor_variable = this.variable_at(neighbor.X, neighbor.Y);
+        if (neighbor_variable >= 0 && this._assignments[neighbor_variable] >= 0)
+          conflict.Add(neighbor_variable);
+      }
+      return conflict;
+    }
+
+    private string assignment_key()
+    {
+      return string.Join(
+        ";",
+        Enumerable.Range(0, this._assignments.Length)
+          .Where(variable => this._assignments[variable] >= 0)
+          .Select(variable => $"{variable}={this._assignments[variable]}"));
+    }
+
+    private void learn_nogood(string key, IEnumerable<int> conflict)
+    {
+      if (!this._enable_conflict_learning)
+        return;
+      if (this._nogoods.add(key, conflict))
+        ++this._nogood_learned_count;
+    }
+
     private void build_greedy_incumbent()
     {
       List<Greedy_Decision> decisions = new List<Greedy_Decision>();
@@ -701,15 +1045,36 @@ internal sealed class Experimental_Map_Generation_Solver
       List<Weighted_Candidate> weighted = new List<Weighted_Candidate>(candidates.Count);
       foreach (int candidate in candidates)
       {
+        int support = this.partial_candidate_support(variable, candidate);
         long weight = this.candidate_weight(variable, candidate);
         double sample = Math.Max(double.Epsilon, this._random.NextDouble());
-        weighted.Add(new Weighted_Candidate(candidate, -Math.Log(sample) / weight));
+        weighted.Add(new Weighted_Candidate(candidate, support, -Math.Log(sample) / weight));
       }
       return weighted
-        .OrderBy(candidate => candidate.Key)
+        .OrderByDescending(candidate => candidate.Support)
+        .ThenBy(candidate => candidate.Key)
         .ThenBy(candidate => candidate.Candidate)
         .Select(candidate => candidate.Candidate)
         .ToList();
+    }
+
+    private int partial_candidate_support(int variable, int candidate)
+    {
+      int support = 0;
+      Cell cell = this._cells[variable];
+      foreach (byte direction in Directions)
+      {
+        Cell neighbor = neighbor_cell(cell, direction);
+        if (this._state.is_off_map(neighbor.X, neighbor.Y))
+          continue;
+        int neighbor_variable = this.variable_at(neighbor.X, neighbor.Y);
+        if (neighbor_variable < 0 || this._assignments[neighbor_variable] != Unassigned)
+          continue;
+        support += this._model.count_intersection(
+          this._domains[neighbor_variable],
+          this._model.allowed_neighbors(candidate, direction));
+      }
+      return support;
     }
 
     private long candidate_weight(int variable, int candidate)
@@ -961,12 +1326,49 @@ internal sealed class Experimental_Map_Generation_Solver
     private readonly struct Weighted_Candidate
     {
       internal int Candidate { get; }
+      internal int Support { get; }
       internal double Key { get; }
 
-      internal Weighted_Candidate(int candidate, double key)
+      internal Weighted_Candidate(int candidate, int support, double key)
       {
         this.Candidate = candidate;
+        this.Support = support;
         this.Key = key;
+      }
+    }
+
+    private readonly struct Complete_Outcome
+    {
+      internal bool Success { get; }
+      internal bool Budget_Exhausted { get; }
+      internal IReadOnlyCollection<int> Conflict { get; }
+      internal int[] Solution { get; }
+
+      private Complete_Outcome(
+        bool success,
+        bool budget_exhausted,
+        IReadOnlyCollection<int> conflict,
+        int[] solution)
+      {
+        this.Success = success;
+        this.Budget_Exhausted = budget_exhausted;
+        this.Conflict = conflict;
+        this.Solution = solution;
+      }
+
+      internal static Complete_Outcome success(int[] solution)
+      {
+        return new Complete_Outcome(true, false, Array.Empty<int>(), solution);
+      }
+
+      internal static Complete_Outcome budget()
+      {
+        return new Complete_Outcome(false, true, Array.Empty<int>(), null);
+      }
+
+      internal static Complete_Outcome failure(IEnumerable<int> conflict)
+      {
+        return new Complete_Outcome(false, false, conflict.Distinct().ToArray(), null);
       }
     }
 
@@ -1037,19 +1439,28 @@ internal sealed class Experimental_Map_Generation_Solver
     internal bool Search_Budget_Exhausted { get; }
     internal int Search_Node_Count { get; }
     internal int Propagation_Removal_Count { get; }
+    internal int Nogood_Learned_Count { get; }
+    internal int Nogood_Hit_Count { get; }
+    internal int Backjump_Count { get; }
 
     internal Search_Result(
       Cell[] cells,
       int[] assignments,
       bool search_budget_exhausted,
       int search_node_count,
-      int propagation_removal_count)
+      int propagation_removal_count,
+      int nogood_learned_count,
+      int nogood_hit_count,
+      int backjump_count)
     {
       this.Cells = cells;
       this.Assignments = assignments;
       this.Search_Budget_Exhausted = search_budget_exhausted;
       this.Search_Node_Count = search_node_count;
       this.Propagation_Removal_Count = propagation_removal_count;
+      this.Nogood_Learned_Count = nogood_learned_count;
+      this.Nogood_Hit_Count = nogood_hit_count;
+      this.Backjump_Count = backjump_count;
     }
   }
 

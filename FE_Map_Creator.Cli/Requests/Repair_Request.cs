@@ -30,6 +30,12 @@ internal sealed class Repair_Request
 
   internal int? Experimental_Search_Node_Limit { get; init; }
 
+  internal int? Experimental_Restart_Count { get; init; }
+
+  internal int? Experimental_Nogood_Limit { get; init; }
+
+  internal bool? Experimental_Enable_Conflict_Learning { get; init; }
+
   /// <summary>
   /// Null when <c>--repair-radius</c> was not explicitly typed on the command line, so a
   /// spec-supplied radius can still take effect; the executor falls back to 0.
