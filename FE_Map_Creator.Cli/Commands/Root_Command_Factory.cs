@@ -14,6 +14,7 @@ internal static class Root_Command_Factory
     root.Subcommands.Add(Repair_Command.build(executor, output));
     root.Subcommands.Add(Batch_Command.build(executor, output));
     root.Subcommands.Add(Tilesets_Command.build(executor, output));
+    root.Subcommands.Add(Validate_Command.build(executor, output));
     return root;
   }
 }

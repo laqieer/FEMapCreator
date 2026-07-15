@@ -15,6 +15,7 @@ public sealed class CliIntegrationTests
     StringAssert.Contains(help.Standard_Output, "FE Map Creator command-line tool for generating and repairing maps.");
     StringAssert.Contains(help.Standard_Output, "generate");
     StringAssert.Contains(help.Standard_Output, "repair");
+    StringAssert.Contains(help.Standard_Output, "validate");
     StringAssert.Contains(help.Standard_Output, "tilesets");
 
     Cli_Process_Result repair_help = await run_cli_async("repair", "--help");
@@ -140,6 +141,70 @@ public sealed class CliIntegrationTests
     StringAssert.Contains(hybrid.Standard_Output, "using hybrid algorithm");
     StringAssert.Contains(hybrid.Standard_Output, "regional attempt(s)");
     CollectionAssert.AreEqual(File.ReadAllBytes(direct_output), File.ReadAllBytes(spec_output));
+  }
+
+  [TestMethod]
+  public async Task ValidateCommandChecksGeneratedMapConstraints()
+  {
+    using Cli_Temporary_Directory directory = new Cli_Temporary_Directory();
+    string valid_map = directory.path("valid.map");
+    string invalid_map = directory.path("invalid.map");
+    string locked_spec = directory.path("locked.json");
+
+    Cli_Process_Result generated = await run_cli_async(
+      "generate",
+      "--width", "4",
+      "--height", "3",
+      "--tileset", "01020304",
+      "--output", valid_map,
+      "--algorithm", "experimental",
+      "--seed", "42");
+    assert_success(generated);
+
+    Cli_Process_Result valid = await run_cli_async(
+      "validate",
+      "--input", valid_map,
+      "--tileset", "01020304");
+    new Map_Job_Spec_Reader().write_job(locked_spec, new Map_Job_Spec()
+    {
+      Version = 1,
+      Operation = "generate",
+      Width = 4,
+      Height = 3,
+      Tileset = "01020304",
+      Template = valid_map,
+      Locked = new bool[][]
+      {
+        new bool[] { true, false, false, false },
+        new bool[] { false, false, false, false },
+        new bool[] { false, false, false, false }
+      }
+    });
+    Cli_Process_Result locked_valid = await run_cli_async(
+      "validate",
+      "--input", valid_map,
+      "--spec", locked_spec,
+      "--algorithm", "experimental");
+    string[] lines = File.ReadAllLines(valid_map);
+    string[] row = lines[2].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+    row[0] = "9999";
+    lines[2] = string.Join(' ', row);
+    File.WriteAllLines(invalid_map, lines);
+    Cli_Process_Result invalid = await run_cli_async(
+      "validate",
+      "--input", invalid_map,
+      "--tileset", "01020304");
+    Cli_Process_Result locked_invalid = await run_cli_async(
+      "validate",
+      "--input", invalid_map,
+      "--spec", locked_spec,
+      "--algorithm", "experimental");
+
+    assert_success(valid);
+    assert_success(locked_valid);
+    StringAssert.Contains(valid.Standard_Output, "Validated");
+    assert_error(invalid, "absent from generation data");
+    assert_error(locked_invalid, "Locked cell (0,0) changed");
   }
 
   [TestMethod]

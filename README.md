@@ -79,8 +79,9 @@ the solver stays opt-in and cancellable. Use
 unchecked **Map Generation > Experimental Constraint Solver** menu item controls both
 generation and repair for the current session.
 
-See [`docs/experimental-solver-benchmark.md`](docs/experimental-solver-benchmark.md) for
-the fixed-seed legacy/experimental comparison used to keep this feature opt-in.
+See [`docs/experimental-solver-benchmark.md`](docs/experimental-solver-benchmark.md) and
+`scripts\benchmark-solvers.ps1` for the reproducible legacy/experimental/hybrid matrix
+and default-promotion gates.
 
 For large maps, `--algorithm hybrid` runs the legacy solver first, groups its unresolved
 cells into independent regions, and applies the constraint solver only inside adaptive
@@ -119,6 +120,14 @@ Repair an existing map, writing to a new file or in place:
 ```powershell
 FE_Map_Creator.Cli.exe repair --input map.map --tileset "FE6 - Fields - 01020304" --output map.repaired.map
 FE_Map_Creator.Cli.exe repair --input map.map --tileset "FE6 - Fields - 01020304" --in-place
+```
+
+Validate every nonzero tile and learned adjacency in an output map (and terrain
+constraints when a spec is supplied):
+
+```powershell
+FE_Map_Creator.Cli.exe validate --input map.map --tileset "FE6 - Fields - 01020304"
+FE_Map_Creator.Cli.exe validate --input map.map --spec job.json
 ```
 
 `--in-place` and `--output` are mutually exclusive; `--in-place` replaces `--input` atomically (write to a temp file, then move over the original).

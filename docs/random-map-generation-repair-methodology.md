@@ -495,16 +495,14 @@ All commits occurred on **2026-07-12** within approximately 4 hours[^56].
 
 ### E1 — Keep legacy as the default
 
-Do not promote the constraint solver based only on synthetic fixtures. Compare
-completion rate, visual quality, determinism, and runtime across bundled FE6/FE7/FE8
-tilesets and real repair inputs first. The initial fixed-seed comparison is recorded in
+Do not promote another default based on a single focused run. The reproducible harness,
+current matrix, and explicit three-run promotion gates are recorded in
 [`experimental-solver-benchmark.md`](experimental-solver-benchmark.md).
 
 ### E2 — Bound pathological search
 
-Cancellation is mandatory, but future experimental iterations may also need an explicit
-search-work budget and a distinct "budget exhausted" diagnostic so unattended CLI
-batches cannot spend unbounded time proving an optimum.
+Experimental and hybrid search share explicit node limits, deterministic restart
+budgets, cooperative cancellation, and distinct budget-exhaustion diagnostics.
 
 ### E3 — Preserve side-by-side compatibility coverage
 

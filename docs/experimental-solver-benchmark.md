@@ -1,118 +1,114 @@
-# Experimental Solver Benchmark
+# Solver Benchmark and Promotion Gates
 
-**Date:** 2026-07-15
+**Date:** 2026-07-16
 
 **Build:** Release, .NET 10, Windows x64
 
-This benchmark compares the default legacy frontier solver with the opt-in experimental
-constraint solver. It records one fixed-seed run per case, including process startup
-time. The experimental solver used its default 10,000-node backtracking budget.
+**Harness:** `scripts\benchmark-solvers.ps1`
 
-## Configuration
+The benchmark compares `legacy`, `experimental`, and `hybrid` generation/repair through
+the published CLI surface. Every produced map is checked by `validate` against learned
+adjacency and applicable terrain constraints. Repeated runs with identical inputs are
+SHA-256 compared.
 
-Generation:
+## Reproduce
 
-```powershell
-dotnet FE_Map_Creator.Cli.dll generate `
-  --width <width> --height <height> `
-  --tileset <id> --output <file> `
-  --algorithm <legacy|experimental> `
-  --depth 1 --seed 42 `
-  --experimental-search-node-limit 10000
-```
-
-Repair:
+Focused matrix used for this report:
 
 ```powershell
-dotnet FE_Map_Creator.Cli.dll repair `
-  --input <damaged-corpus-map> --output <file> `
-  --tileset <id> --algorithm <legacy|experimental> `
-  --repair-radius 1 --depth 1 --seed 42 `
-  --experimental-search-node-limit 10000
+.\scripts\benchmark-solvers.ps1 `
+  -Quick `
+  -RepeatCount 2 `
+  -OutputDirectory "$env:TEMP\FEMapCreator-solver-benchmark"
 ```
 
-Tilesets:
+Full matrix (adds seed `99`):
 
-| Game | Selector |
-|---|---|
-| FE6 Fields | `01020304` |
-| FE7 Fields | `1c1d1e1f` |
-| FE8 Fields | `01000203` |
+```powershell
+.\scripts\benchmark-solvers.ps1 `
+  -RepeatCount 2 `
+  -OutputDirectory "$env:TEMP\FEMapCreator-solver-benchmark-full"
+```
 
-Exit code `0` means complete; exit code `2` means the output was written but contains
-unresolved cells.
+The harness writes `results.json`, `results.csv`, generated maps/specs, and `summary.md`
+under the selected output directory. It exits nonzero for a validation failure,
+nondeterministic output, or any hybrid result worse than its paired legacy result.
 
-## Blank-map generation
+## Matrix
 
-### 4x3
+- Games: FE6, FE7, FE8.
+- Families: Fields and Castle (six bundled tilesets).
+- Seeds: `7` and `42`.
+- Repeats: 2 per exact case.
+- Algorithms: legacy, whole-map experimental, hybrid.
+- Generation:
+  - blank 4x3 and 20x15 maps;
+  - 20x15 maps with required tag-1 cells on the left and forbidden tag-1 cells on the right;
+  - 20x15 template maps split by a locked vertical wall.
+- Repair:
+  - one interior hole, radius 1;
+  - three interior holes, radius 2.
+- Experimental limits: 10,000 total search nodes, four deterministic restarts, 4,096
+  retained exact nogoods.
+- Timings include CLI process startup.
 
-| Game | Algorithm | Exit | Unresolved | Budget exhausted | Time |
-|---|---:|---:|---:|---:|---:|
-| FE6 | legacy | 2 | 4 | no | 369 ms |
-| FE6 | experimental | 0 | 0 | no | 369 ms |
-| FE7 | legacy | 0 | 0 | no | 300 ms |
-| FE7 | experimental | 0 | 0 | no | 372 ms |
-| FE8 | legacy | 2 | 2 | no | 306 ms |
-| FE8 | experimental | 0 | 0 | no | 370 ms |
+## Results
 
-The experimental solver completed all three small maps. Legacy completed one of three.
-Experimental runtime was equal to or 64-72 ms slower in these single runs.
+| Scenario | Algorithm | Runs | Complete | Median ms | Worst ms | Median unresolved | Worst unresolved | Budget cuts | Invalid |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| blank | experimental | 48 | 48 | 347.5 | 438 | 0 | 0 | 0 | 0 |
+| blank | hybrid | 48 | 28 | 546 | 1647 | 0 | 27 | 20 | 0 |
+| blank | legacy | 48 | 6 | 306 | 958 | 10.5 | 46 | 0 | 0 |
+| disconnected | experimental | 24 | 24 | 440.5 | 990 | 0 | 0 | 0 | 0 |
+| disconnected | hybrid | 24 | 0 | 908.5 | 1508 | 11 | 18 | 24 | 0 |
+| disconnected | legacy | 24 | 0 | 463.5 | 1099 | 27.5 | 37 | 0 | 0 |
+| repair-multi | experimental | 24 | 24 | 333 | 376 | 0 | 0 | 0 | 0 |
+| repair-multi | hybrid | 24 | 24 | 389 | 514 | 0 | 0 | 0 | 0 |
+| repair-multi | legacy | 24 | 8 | 260 | 325 | 1 | 6 | 0 | 0 |
+| repair-single | experimental | 24 | 24 | 327 | 347 | 0 | 0 | 0 | 0 |
+| repair-single | hybrid | 24 | 24 | 266.5 | 281 | 0 | 0 | 0 | 0 |
+| repair-single | legacy | 24 | 24 | 260 | 279 | 0 | 0 | 0 | 0 |
+| terrain | experimental | 24 | 20 | 780 | 6391 | 0 | 18 | 4 | 0 |
+| terrain | hybrid | 24 | 4 | 871 | 1374 | 17.5 | 39 | 20 | 0 |
+| terrain | legacy | 24 | 0 | 436 | 834 | 44 | 297 | 0 | 0 |
 
-### 20x15
+## Correctness gates
 
-| Game | Algorithm | Exit | Unresolved | Budget exhausted | Time |
-|---|---:|---:|---:|---:|---:|
-| FE6 | legacy | 2 | 19 | no | 427 ms |
-| FE6 | experimental | 2 | 26 | yes | 705 ms |
-| FE7 | legacy | 2 | 27 | no | 712 ms |
-| FE7 | experimental | 2 | 31 | yes | 837 ms |
-| FE8 | legacy | 2 | 28 | no | 442 ms |
-| FE8 | experimental | 2 | 35 | yes | 910 ms |
+- Validation failures: **0**.
+- Determinism failures: **0**.
+- Hybrid-worse-than-legacy paired cases: **0**.
+- Experimental budget cuts: **4**, all in the constrained-terrain scenario.
+- Hybrid retains its promised quality floor but often exhausts the regional budget.
 
-At 20x15, both algorithms were incomplete. Experimental mode exhausted the 10,000-node
-budget in every case and returned the best assignment found so far; it did not prove a
-minimum unresolved count. With this budget and seed it was 125-468 ms slower and left
-4-7 more unresolved cells than legacy.
+The whole-map experimental solver completed every blank, disconnected, and repair case,
+and 20 of 24 constrained-terrain runs. Hybrid improved or matched legacy in every pair,
+but remained incomplete on larger blank, disconnected, and terrain-constrained cases
+because its budget is divided across regional attempts.
 
-## Corpus-map repair
+## Default-promotion criteria
 
-One nonzero interior tile in each source map was changed to `0`, then repaired with
-radius 1:
+Changing the default away from legacy requires all of the following:
 
-| Game | Source map | Size |
-|---|---|---:|
-| FE6 | `FE6 Maps\0102xx04\Chapter1BreathofDestiny.map` | 15x21 |
-| FE7 | `FE7 Maps\1c1dxx1f\Ch9AGrimReunion.map` | 20x15 |
-| FE8 | `FE8 Maps\0100xx03\Ch2.map` | 15x15 |
+1. Three consecutive **full** matrix runs on documented hardware.
+2. Zero validation and determinism failures.
+3. Zero candidate-algorithm cases worse than legacy in unresolved count.
+4. Candidate median unresolved count no worse than legacy in every scenario.
+5. Candidate worst runtime no more than 2x legacy in every scenario.
+6. No search-budget exhaustion for the candidate default.
+7. Release build and full automated tests remain green.
 
-| Game | Algorithm | Exit | Unresolved | Budget exhausted | Time |
-|---|---:|---:|---:|---:|---:|
-| FE6 | legacy | 0 | 0 | no | 269 ms |
-| FE6 | experimental | 0 | 0 | no | 333 ms |
-| FE7 | legacy | 0 | 0 | no | 288 ms |
-| FE7 | experimental | 0 | 0 | no | 377 ms |
-| FE8 | legacy | 0 | 0 | no | 269 ms |
-| FE8 | experimental | 0 | 0 | no | 329 ms |
-
-Both algorithms repaired every sampled hole completely. Experimental repair was 60-89 ms
-slower in these runs and did not exhaust its budget.
-
-## Conclusions
-
-- Keeping legacy as the default is appropriate.
-- Experimental search is effective on the sampled small blank maps and demonstrates the
-  intended global-backtracking benefit.
-- The default 10,000-node budget is insufficient to improve these 20x15 blank-map cases;
-  budget exhaustion is therefore surfaced in API/CLI results.
-- Experimental repair is functional on the sampled real maps, but offered no completion
-  advantage and had higher runtime.
+This report is one focused matrix, not three consecutive full matrices. The whole-map
+experimental solver also exceeds the 2x worst-runtime gate and exhausts its budget in
+some terrain cases. Hybrid does not meet the runtime or budget-exhaustion gates either.
+Legacy therefore remains the default.
 
 ## Limitations
 
-- One seed (`42`) and one run per case; timings are not statistical benchmarks.
-- Process startup is included.
-- Only Fields tilesets were sampled.
-- Generation used blank maps; templates, locks, and terrain constraints may change the
-  comparison substantially.
-- Repair used one interior hole and radius 1.
-- Node-limit tradeoffs above and below 10,000 were not measured.
+- Only two seeds were included in the committed report; the full harness adds a third.
+- Process-startup noise is included, so sub-second differences should not be overread.
+- Terrain uses a positive tag-1 left half and a negative tag-1 right half, exercising
+  both required and forbidden terrain filtering.
+- Template coverage uses one locked-wall topology.
+- Repair uses center-biased nonzero source cells and two damage patterns.
+- Serialized tile `0` is skipped by `validate` because map formats cannot distinguish a
+  legitimate tile-zero cell from an unresolved/hole sentinel.

@@ -101,6 +101,103 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     return Task.FromResult(Cli_Execution_Result.success($"Listed {count} tileset(s) from \"{assets_root}\"."));
   }
 
+  public Task<Cli_Execution_Result> validate_async(
+    Validate_Request request,
+    Cli_Output output,
+    CancellationToken cancellation_token)
+  {
+    cancellation_token.ThrowIfCancellationRequested();
+    Map_Job_Spec spec = null;
+    string spec_directory = null;
+    if (!string.IsNullOrWhiteSpace(request.Spec))
+    {
+      string spec_path = Path.GetFullPath(request.Spec);
+      spec = new Map_Job_Spec_Reader().read_job(spec_path);
+      spec_directory = Path.GetDirectoryName(spec_path);
+    }
+    string input_path = Job_Merge.resolve_path(request.Input, spec?.Input, spec_directory);
+    if (string.IsNullOrWhiteSpace(input_path))
+      throw new InvalidOperationException("--input is required unless --spec supplies it.");
+    Map_Codec_Registry registry = new Map_Codec_Registry();
+    Map_Document document = registry.read(
+      input_path,
+      new Map_Read_Options
+      {
+        Width = request.Width ?? spec?.Width,
+        Height = request.Height ?? spec?.Height,
+        Tileset = Job_Merge.merge_string(request.Tileset, spec?.Tileset),
+      });
+    string selector = Job_Merge.merge_string(
+      request.Tileset,
+      !string.IsNullOrWhiteSpace(spec?.Tileset) ? spec.Tileset : document.Tileset);
+    Resolved_Tileset resolved = Asset_Resolution.resolve(
+      request.Assets_Dir,
+      spec?.AssetsDir,
+      spec_directory,
+      selector,
+      request.Tileset_Image,
+      spec?.TilesetImage,
+      request.Generation_Data,
+      spec?.GenerationData,
+      require_image: false);
+    int[,] terrain = spec?.terrain_array(document.Width, document.Height)
+      ?? new int[document.Width, document.Height];
+    Asset_Resolution.require_terrain_metadata_if_constrained(
+      terrain,
+      document.Width,
+      document.Height,
+      resolved.Terrain_Metadata,
+      resolved.Asset.Name);
+    Map_Validation_Result result = Map_Constraint_Validator.validate(
+      document.Tiles,
+      resolved.Generation_Data,
+      resolved.Terrain_Metadata,
+      terrain,
+      Algorithm_Selection.resolve(request.Algorithm, spec?.Algorithm));
+    List<string> validation_errors = new List<string>(result.Errors);
+    if (spec?.Locked != null)
+    {
+      string template_path = Job_Merge.resolve_path(null, spec.Template, spec_directory);
+      if (string.IsNullOrWhiteSpace(template_path))
+        validation_errors.Add("The spec contains a locked matrix but no template to validate locked values against.");
+      else
+      {
+        Map_Document template = registry.read(template_path);
+        if (template.Width != document.Width || template.Height != document.Height)
+          validation_errors.Add("The validation template dimensions do not match the output map.");
+        else
+        {
+          bool[,] locked = spec.locked_array(document.Width, document.Height);
+          for (int y = 0; y < document.Height; ++y)
+          {
+            for (int x = 0; x < document.Width; ++x)
+            {
+              if (locked[x, y] && document.Tiles[x, y] != template.Tiles[x, y])
+              {
+                validation_errors.Add(
+                  $"Locked cell ({x},{y}) changed from template tile {template.Tiles[x, y]} " +
+                  $"to {document.Tiles[x, y]}.");
+              }
+            }
+          }
+        }
+      }
+    }
+    if (validation_errors.Count > 0)
+    {
+      string details = string.Join(
+        Environment.NewLine,
+        validation_errors.Take(20));
+      if (validation_errors.Count > 20)
+        details += $"{Environment.NewLine}... and {validation_errors.Count - 20} more error(s).";
+      return Task.FromResult(Cli_Execution_Result.failure(
+        $"Validation failed for \"{input_path}\" with {validation_errors.Count} error(s):{Environment.NewLine}{details}"));
+    }
+    return Task.FromResult(Cli_Execution_Result.success(
+      $"Validated \"{input_path}\" ({result.Checked_Adjacency_Count} adjacency pair(s), " +
+      $"{result.Skipped_Zero_Cell_Count} zero cell(s) skipped)."));
+  }
+
   /// <summary>Single generate job, shared by direct single-job calls, --count batches
   /// (per generated job), and manifest jobs (per "generate" job).</summary>
   private static async Task<Cli_Execution_Result> run_generate_job(

@@ -32,4 +32,9 @@ internal interface ICli_Executor
     Tilesets_List_Request request,
     Cli_Output output,
     CancellationToken cancellation_token);
+
+  Task<Cli_Execution_Result> validate_async(
+    Validate_Request request,
+    Cli_Output output,
+    CancellationToken cancellation_token);
 }
