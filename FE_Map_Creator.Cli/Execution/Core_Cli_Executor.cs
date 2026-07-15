@@ -151,6 +151,9 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     Map_Generation_Engine engine = new Map_Generation_Engine(resolved.Generation_Data, resolved.Terrain_Metadata);
     Map_Generation_Options options = new Map_Generation_Options
     {
+      Algorithm = Algorithm_Selection.resolve(request.Algorithm, spec?.Algorithm),
+      Experimental_Search_Node_Limit =
+        request.Experimental_Search_Node_Limit ?? spec?.ExperimentalSearchNodeLimit ?? 10000,
       Depth = request.Depth ?? spec?.Depth ?? 1,
       Seed = request.Seed ?? spec?.Seed,
     };
@@ -166,7 +169,7 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     (Map_Document document, Map_Write_Options write_options) = Output_Document_Builder.build(state.Tiles, output_format, resolved.Asset);
     return Incomplete_Result_Writer.write(
       output_path, request.Force, request.Allow_Incomplete, request.Require_Complete,
-      result.Unresolved_Tile_Count, result.Seed, "Generated",
+      result, "Generated",
       temporary_path => registry.write(temporary_path, document, write_options, output_format));
   }
 
@@ -216,9 +219,15 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     Asset_Resolution.require_terrain_metadata_if_constrained(
       state.Terrain, document.Width, document.Height, resolved.Terrain_Metadata, resolved.Asset.Name);
 
+    Map_Generation_Algorithm algorithm = Algorithm_Selection.resolve(request.Algorithm, spec?.Algorithm);
+    if (algorithm == Map_Generation_Algorithm.Experimental_Constraint)
+      mark_imported_zero_holes(state);
     Map_Generation_Engine engine = new Map_Generation_Engine(resolved.Generation_Data, resolved.Terrain_Metadata);
     Map_Repair_Options options = new Map_Repair_Options
     {
+      Algorithm = algorithm,
+      Experimental_Search_Node_Limit =
+        request.Experimental_Search_Node_Limit ?? spec?.ExperimentalSearchNodeLimit ?? 10000,
       Radius = request.Repair_Radius ?? spec?.RepairRadius ?? 0,
       Depth = request.Depth ?? spec?.Depth ?? 1,
       Seed = request.Seed ?? spec?.Seed,
@@ -235,7 +244,7 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     (Map_Document output_document, Map_Write_Options write_options) = Output_Document_Builder.build(state.Tiles, output_format, resolved.Asset);
     return Incomplete_Result_Writer.write(
       output_path, request.Force || request.In_Place, request.Allow_Incomplete, request.Require_Complete,
-      result.Unresolved_Tile_Count, result.Seed, "Repaired",
+      result, "Repaired",
       temporary_path => registry.write(temporary_path, output_document, write_options, output_format));
   }
 
@@ -297,6 +306,8 @@ internal sealed class Core_Cli_Executor : ICli_Executor
         Output = full_output_path,
         Format = batch_format,
         Template = request.Template,
+        Algorithm = request.Algorithm,
+        Experimental_Search_Node_Limit = request.Experimental_Search_Node_Limit,
         Depth = request.Depth,
         Seed = seed,
         Assets_Dir = request.Assets_Dir,
@@ -374,6 +385,8 @@ internal sealed class Core_Cli_Executor : ICli_Executor
         Tileset = request.Tileset,
         Width = request.Width,
         Height = request.Height,
+        Algorithm = request.Algorithm,
+        Experimental_Search_Node_Limit = request.Experimental_Search_Node_Limit,
         Repair_Radius = request.Repair_Radius,
         Depth = request.Depth,
         Seed = request.Seed,
@@ -446,6 +459,18 @@ internal sealed class Core_Cli_Executor : ICli_Executor
   private static string with_trailing_separator(string path)
   {
     return path.EndsWith(Path.DirectorySeparatorChar) ? path : path + Path.DirectorySeparatorChar;
+  }
+
+  private static void mark_imported_zero_holes(Map_State state)
+  {
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+      {
+        if (state.Tiles[x, y] == 0)
+          state.Drawn[x, y] = false;
+      }
+    }
   }
 
   private static string resolve_optional_full_path(string path)

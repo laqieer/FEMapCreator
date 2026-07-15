@@ -29,6 +29,10 @@ public sealed class Map_Job_Spec
 
   public string AssetsDir { get; set; }
 
+  public string Algorithm { get; set; }
+
+  public int? ExperimentalSearchNodeLimit { get; set; }
+
   public int? Depth { get; set; }
 
   public int? RepairRadius { get; set; }
@@ -43,6 +47,9 @@ public sealed class Map_Job_Spec
 
   public void validate()
   {
+    validate_algorithm();
+    if (this.ExperimentalSearchNodeLimit.HasValue && this.ExperimentalSearchNodeLimit.Value <= 0)
+      throw new InvalidOperationException("ExperimentalSearchNodeLimit must be positive.");
     validate_optional_dimensions();
     Matrix_Dimensions? dimensions = null;
     dimensions = validate_rectangular_rows(this.Drawn, nameof (this.Drawn), dimensions);
@@ -55,12 +62,26 @@ public sealed class Map_Job_Spec
         throw new InvalidOperationException(
           $"Width is {this.Width.Value} but the constraint matrices contain {dimensions.Value.Width} columns.");
       }
+
       if (this.Height.HasValue && this.Height.Value != dimensions.Value.Height)
       {
         throw new InvalidOperationException(
           $"Height is {this.Height.Value} but the constraint matrices contain {dimensions.Value.Height} rows.");
       }
       this.validate_constraints(dimensions.Value.Width, dimensions.Value.Height);
+    }
+  }
+
+  private void validate_algorithm()
+  {
+    if (string.IsNullOrWhiteSpace(this.Algorithm))
+      return;
+    string algorithm = this.Algorithm.Trim();
+    if (!string.Equals(algorithm, "legacy", StringComparison.OrdinalIgnoreCase)
+      && !string.Equals(algorithm, "experimental", StringComparison.OrdinalIgnoreCase))
+    {
+      throw new InvalidOperationException(
+        $"Algorithm \"{this.Algorithm}\" is invalid; expected \"legacy\" or \"experimental\".");
     }
   }
 

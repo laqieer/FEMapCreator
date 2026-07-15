@@ -23,6 +23,14 @@ internal sealed class Generate_Request
   internal string Spec { get; init; }
 
   /// <summary>
+  /// Null when <c>--algorithm</c> was not explicitly typed so a spec-supplied selector
+  /// can still take effect; the executor falls back to legacy.
+  /// </summary>
+  internal string Algorithm { get; init; }
+
+  internal int? Experimental_Search_Node_Limit { get; init; }
+
+  /// <summary>
   /// Null when <c>--depth</c> was not explicitly typed on the command line, so a
   /// spec-supplied depth can still take effect; the executor falls back to 1 when
   /// neither the CLI nor the spec provide a value.

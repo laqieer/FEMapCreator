@@ -22,4 +22,10 @@ internal static class Cli_Binding
     OptionResult option_result = parse_result.GetResult(option);
     return option_result != null && !option_result.Implicit ? option_result.GetValueOrDefault<T>() : (T?) null;
   }
+
+  internal static string explicit_value_or_null(ParseResult parse_result, Option<string> option)
+  {
+    OptionResult option_result = parse_result.GetResult(option);
+    return option_result != null && !option_result.Implicit ? option_result.GetValueOrDefault<string>() : null;
+  }
 }

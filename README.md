@@ -57,6 +57,26 @@ Generate a blank map (every cell open, filled by the generation engine):
 FE_Map_Creator.Cli.exe generate --width 30 --height 20 --tileset "FE6 - Fields - 01020304" --output map.map --seed 12345
 ```
 
+The existing frontier generator remains the default. Opt into the experimental global
+constraint solver with `--algorithm experimental`:
+
+```powershell
+FE_Map_Creator.Cli.exe generate --width 30 --height 20 --tileset "FE6 - Fields - 01020304" --output map.experimental.map --algorithm experimental --depth 2 --seed 12345
+```
+
+The experimental solver globally backtracks to avoid greedy dead ends. It first builds a
+fast complete/partial incumbent, then explores up to 10,000 backtracking nodes by
+default. A zero-unresolved result is optimal; when the node budget is exhausted, the CLI
+reports that the returned incomplete result may not be minimal. Tune the limit with
+`--experimental-search-node-limit N`. The solver has exponential worst-case runtime, so
+it remains opt-in and cancellable. Use
+`--algorithm legacy` explicitly to override an experimental job spec. In WinForms, the
+unchecked **Map Generation > Experimental Constraint Solver** menu item controls both
+generation and repair for the current session.
+
+See [`docs/experimental-solver-benchmark.md`](docs/experimental-solver-benchmark.md) for
+the fixed-seed legacy/experimental comparison used to keep this feature opt-in.
+
 Generate from a template plus JSON masks that identify which template cells are initially drawn or locked:
 
 ```powershell
@@ -137,6 +157,8 @@ FE_Map_Creator.Cli.exe batch --manifest manifest.json --fail-fast
   "tileset": "FE6 - Fields - 01020304",
   "template": "template.map",
   "output": "map.map",
+  "algorithm": "experimental",
+  "experimentalSearchNodeLimit": 10000,
   "seed": 42,
   "depth": 1,
   "locked": [
@@ -158,7 +180,7 @@ FE_Map_Creator.Cli.exe batch --manifest manifest.json --fail-fast
 }
 ```
 
-Here `template.map`'s border tiles are fixed by `locked` (also implicitly `drawn`, since with a template and no explicit spec `drawn` matrix, `drawn` defaults to the `locked` mask), the top-left interior block requires terrain tag `3`, the bottom-right interior block forbids terrain tag `5`, and every other interior cell is left open for the generation engine to fill.
+Here `template.map`'s border tiles are fixed by `locked` (also implicitly `drawn`, since with a template and no explicit spec `drawn` matrix, `drawn` defaults to the `locked` mask), the top-left interior block requires terrain tag `3`, the bottom-right interior block forbids terrain tag `5`, and every other interior cell is left open for the experimental solver to fill. Omit `algorithm` or set it to `legacy` to retain the default frontier algorithm.
 
 A single-job MAR repair spec supplies the same non-inferable metadata:
 
@@ -220,5 +242,6 @@ Constraint matrices (`drawn`, `locked`, `terrain`) are `[row][column]` (JSON arr
 
 - Every write goes through an overwrite guard: an existing `--output` target is left untouched unless `--force` is passed. Explicit `--in-place` is itself consent to replace the input. In both cases, the new file is written to a sibling temp file first and moved into place atomically.
 - By default an incomplete result (cells the generation engine could not resolve) is still written and reported, but exits with code `2`. `--allow-incomplete` treats that same result as success (exit `0`). `--require-complete` instead suppresses the write entirely (exit `2`) if any cell remains unresolved. `--allow-incomplete` and `--require-complete` are mutually exclusive.
+- These incomplete-output policies are unchanged by `--algorithm`. Experimental mode tracks unresolved cells separately from legitimate tile index `0` while searching, then serializes unresolved cells using the existing map-format convention.
 - Exit codes: `0` success, `1` error (bad arguments, missing files, invalid data), `2` incomplete result (see above), `3` batch-failed (`generate --count`, `repair --input-dir`, or `batch --manifest`: at least one job failed or was incomplete, or the run stopped early via `--fail-fast`/cancellation before every job was attempted).
 - `generate --count` derives each job's seed deterministically from a single `--seed`/spec seed and its 1-based job index (via a splitmix64-style mixer), so the whole batch is reproducible from one seed while every job still gets an independent-looking seed; omit `--seed` and each job instead gets its own randomly chosen seed (still printed per job).

@@ -7,6 +7,18 @@ namespace FE_Map_Creator.Generation;
 public sealed class Map_Generation_Options
 {
   /// <summary>
+  /// Generation implementation to use. The existing frontier algorithm remains the
+  /// default; the constraint solver must be selected explicitly.
+  /// </summary>
+  public Map_Generation_Algorithm Algorithm { get; init; } = Map_Generation_Algorithm.Legacy;
+
+  /// <summary>
+  /// Maximum backtracking nodes explored by the experimental constraint solver after it
+  /// builds a fast greedy incumbent. Ignored by the legacy algorithm.
+  /// </summary>
+  public int Experimental_Search_Node_Limit { get; init; } = 10000;
+
+  /// <summary>
   /// Lookahead depth for the neighbor-search backtracking algorithm. Must be 1 or 2
   /// (matches the GUI's DEPTH/MAX_DEPTH constants).
   /// </summary>

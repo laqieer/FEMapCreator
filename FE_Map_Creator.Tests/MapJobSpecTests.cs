@@ -175,6 +175,57 @@ public sealed class MapJobSpecTests
   }
 
   [TestMethod]
+  public void ReaderRejectsUnknownAlgorithm()
+  {
+    string directory = create_temp_directory();
+    try
+    {
+      string filename = Path.Combine(directory, "job.json");
+      File.WriteAllText(filename,
+        """
+        {
+          "version": 1,
+          "algorithm": "future"
+        }
+        """);
+
+      InvalidOperationException ex =
+        Assert.Throws<InvalidOperationException>(() => new Map_Job_Spec_Reader().read_job(filename));
+      StringAssert.Contains(ex.Message, "legacy");
+      StringAssert.Contains(ex.Message, "experimental");
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [TestMethod]
+  public void ReaderRejectsNonPositiveExperimentalSearchNodeLimit()
+  {
+    string directory = create_temp_directory();
+    try
+    {
+      string filename = Path.Combine(directory, "job.json");
+      File.WriteAllText(filename,
+        """
+        {
+          "version": 1,
+          "experimentalSearchNodeLimit": 0
+        }
+        """);
+
+      InvalidOperationException ex =
+        Assert.Throws<InvalidOperationException>(() => new Map_Job_Spec_Reader().read_job(filename));
+      StringAssert.Contains(ex.Message, "ExperimentalSearchNodeLimit");
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [TestMethod]
   public void JobSpecRoundTripPreservesVersionAndOrientation()
   {
     string directory = create_temp_directory();
@@ -189,6 +240,8 @@ public sealed class MapJobSpecTests
         Width = 2,
         Height = 2,
         Tileset = "01020304",
+        Algorithm = "experimental",
+        ExperimentalSearchNodeLimit = 1234,
         Drawn = new bool[][]
         {
           new bool[] { true, false },
@@ -212,6 +265,8 @@ public sealed class MapJobSpecTests
       Assert.AreEqual(1, actual.Version);
       Assert.AreEqual("generate", actual.Operation);
       Assert.AreEqual("01020304", actual.Tileset);
+      Assert.AreEqual("experimental", actual.Algorithm);
+      Assert.AreEqual(1234, actual.ExperimentalSearchNodeLimit);
       Assert.IsTrue(actual.Drawn[0][0]);
       Assert.IsFalse(actual.Drawn[0][1]);
       Assert.IsTrue(actual.Locked[0][1]);

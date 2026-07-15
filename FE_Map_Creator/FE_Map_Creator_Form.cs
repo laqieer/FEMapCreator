@@ -121,6 +121,7 @@ public class FE_Map_Creator_Form : Form
   private ToolStripMenuItem undoToolStripMenuItem;
   private ToolStripMenuItem clearPinnedTilesToolStripMenuItem;
   private ToolStripMenuItem repairMapToolStripMenuItem;
+  private ToolStripMenuItem experimentalConstraintSolverToolStripMenuItem;
   private ToolStripSeparator toolStripMenuItem1;
   private ToolStripMenuItem clearTerrainTagsToolStripMenuItem;
   private ToolStripMenuItem convertMapToTerrainTagsToolStripMenuItem;
@@ -585,7 +586,7 @@ public class FE_Map_Creator_Form : Form
     this.Open_Tiles = new HashSet<int>();
     this.draw_random_tile();
     CancellationToken cancellation_token = this.start_map_operation("Generating map...");
-    this.generate_map(this.Zoom, cancellation_token);
+    this.generate_map(1, this.Zoom, cancellation_token, Map_Generation_Algorithm.Legacy);
     this.refresh_panel_size();
     this.MapPicture.Invalidate();
   }
@@ -922,6 +923,9 @@ public class FE_Map_Creator_Form : Form
   {
     this.Map_Generation_Cancellation = new CancellationTokenSource();
     this.Updating = true;
+    this.editToolStripMenuItem.Enabled = false;
+    this.mapGenerationToolStripMenuItem.Enabled = false;
+    this.NewMapButton.Enabled = false;
     this.CancelOperationButton.Enabled = true;
     this.StatusbarSpacerLabel.Text = status;
     return this.Map_Generation_Cancellation.Token;
@@ -934,6 +938,9 @@ public class FE_Map_Creator_Form : Form
     CancellationTokenSource cancellation = this.Map_Generation_Cancellation;
     this.Map_Generation_Cancellation = null;
     this.Updating = false;
+    this.editToolStripMenuItem.Enabled = true;
+    this.mapGenerationToolStripMenuItem.Enabled = true;
+    this.NewMapButton.Enabled = true;
     this.CancelOperationButton.Enabled = false;
     this.StatusbarSpacerLabel.Text = status;
     cancellation.Dispose();
@@ -943,10 +950,31 @@ public class FE_Map_Creator_Form : Form
   {
     if (result.Unresolved_Tile_Count <= 0)
       return;
-    MessageBox.Show(this, $"{operation} completed with {result.Unresolved_Tile_Count} unresolved tiles.\r\nSeed: {result.Seed}.", $"{operation} Incomplete", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    string experimental = result.Algorithm == Map_Generation_Algorithm.Experimental_Constraint
+      ? result.Search_Budget_Exhausted
+        ? "\r\nExperimental constraint solver returned the best result found within its search budget."
+        : "\r\nExperimental constraint solver minimized the unresolved count."
+      : "";
+    if (result.Search_Budget_Exhausted)
+    {
+      experimental +=
+        $"\r\nSearch budget exhausted after {result.Search_Node_Count} node(s); " +
+        "the unresolved count may not be optimal.";
+    }
+    MessageBox.Show(this, $"{operation} completed with {result.Unresolved_Tile_Count} unresolved tiles.\r\nSeed: {result.Seed}.{experimental}", $"{operation} Incomplete", MessageBoxButtons.OK, MessageBoxIcon.Warning);
   }
 
   protected void repair_map(int depth, int radius, int zoom, CancellationToken cancellation_token)
+  {
+    this.repair_map(depth, radius, zoom, cancellation_token, Map_Generation_Algorithm.Legacy);
+  }
+
+  protected void repair_map(
+    int depth,
+    int radius,
+    int zoom,
+    CancellationToken cancellation_token,
+    Map_Generation_Algorithm algorithm)
   {
     Map_Generation_Result result = null;
     Exception operation_error = null;
@@ -955,7 +983,7 @@ public class FE_Map_Creator_Form : Form
     {
       Map_State state = new Map_State(this.Map_Tiles, this.Drawn_Tiles, this.Locked_Tiles, this.Terrain_Types);
       Map_Generation_Engine engine = new Map_Generation_Engine(this.Tileset_Generator_Data, this.tileset_data);
-      Map_Repair_Options options = new Map_Repair_Options { Depth = depth, Radius = radius };
+      Map_Repair_Options options = new Map_Repair_Options { Algorithm = algorithm, Depth = depth, Radius = radius };
       Tile_Drawn_Callback callback = (int x, int y, int tile_index) =>
       {
         Rectangle rect = new Rectangle(x * 16 /*0x10*/ * zoom, y * 16 /*0x10*/ * zoom, 16 /*0x10*/ * zoom, 16 /*0x10*/ * zoom);
@@ -969,7 +997,7 @@ public class FE_Map_Creator_Form : Form
       Thread.Sleep(25);
       cancellation_token.ThrowIfCancellationRequested();
       result = engine.repair(state, options, cancellation_token, callback);
-      status = $"Map repair complete. Seed: {result.Seed}.";
+      status = $"Map repair complete{algorithm_status_suffix(result.Algorithm)}. Seed: {result.Seed}.";
     }
     catch (OperationCanceledException) when (cancellation_token.IsCancellationRequested)
     {
@@ -1007,6 +1035,15 @@ public class FE_Map_Creator_Form : Form
 
   protected void generate_map(int zoom, CancellationToken cancellation_token)
   {
+    this.generate_map(1, zoom, cancellation_token, Map_Generation_Algorithm.Legacy);
+  }
+
+  protected void generate_map(
+    int depth,
+    int zoom,
+    CancellationToken cancellation_token,
+    Map_Generation_Algorithm algorithm)
+  {
     Map_Generation_Result result = null;
     Exception operation_error = null;
     string status = "Map generation failed.";
@@ -1014,7 +1051,7 @@ public class FE_Map_Creator_Form : Form
     {
       Map_State state = new Map_State(this.Map_Tiles, this.Drawn_Tiles, this.Locked_Tiles, this.Terrain_Types);
       Map_Generation_Engine engine = new Map_Generation_Engine(this.Tileset_Generator_Data, this.tileset_data);
-      Map_Generation_Options options = new Map_Generation_Options { Depth = 1 };
+      Map_Generation_Options options = new Map_Generation_Options { Algorithm = algorithm, Depth = depth };
       Tile_Drawn_Callback callback = (int x, int y, int tile_index) =>
       {
         Rectangle rect = new Rectangle(x * 16 /*0x10*/ * zoom, y * 16 /*0x10*/ * zoom, 16 /*0x10*/ * zoom, 16 /*0x10*/ * zoom);
@@ -1027,8 +1064,9 @@ public class FE_Map_Creator_Form : Form
       });
       cancellation_token.ThrowIfCancellationRequested();
       result = engine.generate(state, options, cancellation_token, callback);
-      status = $"Map generation complete. Seed: {result.Seed}.";
+      status = $"Map generation complete{algorithm_status_suffix(result.Algorithm)}. Seed: {result.Seed}.";
     }
+
     catch (OperationCanceledException) when (cancellation_token.IsCancellationRequested)
     {
       status = "Map generation cancelled.";
@@ -1059,6 +1097,204 @@ public class FE_Map_Creator_Form : Form
           MessageBox.Show(this, operation_error.Message, "Map Generation Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         else if (result != null)
           this.show_map_generation_result("Map Generation", result);
+      });
+    }
+  }
+
+  private static string algorithm_status_suffix(Map_Generation_Algorithm algorithm)
+  {
+    return algorithm == Map_Generation_Algorithm.Experimental_Constraint ? " (experimental)" : "";
+  }
+
+  private Map_State create_experimental_generation_state(int width, int height)
+  {
+    int[,] tiles = new int[width, height];
+    bool[,] drawn = new bool[width, height];
+    bool[,] locked = this.Locked_Tiles != null
+      && this.Locked_Tiles.GetLength(0) == width
+      && this.Locked_Tiles.GetLength(1) == height
+      ? (bool[,]) this.Locked_Tiles.Clone()
+      : new bool[width, height];
+    int[,] terrain = this.Terrain_Types != null
+      && this.Terrain_Types.GetLength(0) == width
+      && this.Terrain_Types.GetLength(1) == height
+      ? (int[,]) this.Terrain_Types.Clone()
+      : new int[width, height];
+
+    if (this.Map_Tiles != null
+      && this.Map_Tiles.GetLength(0) == width
+      && this.Map_Tiles.GetLength(1) == height)
+    {
+      for (int y = 0; y < height; ++y)
+      {
+        for (int x = 0; x < width; ++x)
+        {
+          if (!locked[x, y])
+            continue;
+          tiles[x, y] = this.Map_Tiles[x, y];
+          drawn[x, y] = true;
+        }
+      }
+    }
+
+    return new Map_State(tiles, drawn, locked, terrain);
+  }
+
+  private Map_State create_experimental_repair_state()
+  {
+    Map_State state = new Map_State(
+      (int[,]) this.Map_Tiles.Clone(),
+      (bool[,]) this.Drawn_Tiles.Clone(),
+      (bool[,]) this.Locked_Tiles.Clone(),
+      (int[,]) this.Terrain_Types.Clone());
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+      {
+        if (state.Tiles[x, y] == 0)
+          state.Drawn[x, y] = false;
+      }
+    }
+    return state;
+  }
+
+  private void generate_map_experimental(
+    Map_State state,
+    int depth,
+    int zoom,
+    CancellationToken cancellation_token)
+  {
+    Map_Generation_Result result = null;
+    Exception operation_error = null;
+    string status = "Map generation failed.";
+    try
+    {
+      Map_Generation_Engine engine = new Map_Generation_Engine(this.Tileset_Generator_Data, this.tileset_data);
+      result = engine.generate(
+        state,
+        new Map_Generation_Options()
+        {
+          Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+          Depth = depth
+        },
+        cancellation_token);
+      status = $"Map generation complete (experimental). Seed: {result.Seed}.";
+    }
+    catch (OperationCanceledException) when (cancellation_token.IsCancellationRequested)
+    {
+      status = "Map generation cancelled.";
+    }
+    catch (ArgumentException ex)
+    {
+      operation_error = ex;
+    }
+    catch (InvalidOperationException ex)
+    {
+      operation_error = ex;
+    }
+    catch (KeyNotFoundException ex)
+    {
+      operation_error = ex;
+    }
+    catch (IndexOutOfRangeException ex)
+    {
+      operation_error = ex;
+    }
+    finally
+    {
+      this.invoke_on_ui(() =>
+      {
+        if (operation_error == null && result != null)
+        {
+          if (this.Map_Tiles == null)
+            this.Undo_Map_Tiles = new int[state.Width, state.Height];
+          else
+            this.copy_map_to_undo();
+          this.Text = "Map Editor - New Map";
+          this.WidthUpDown.Value = (Decimal) (this.Map_Width = state.Width);
+          this.HeightUpDown.Value = (Decimal) (this.Map_Height = state.Height);
+          this.Map_Tiles = state.Tiles;
+          this.Drawn_Tiles = state.Drawn;
+          this.Locked_Tiles = state.Locked;
+          this.Terrain_Types = state.Terrain;
+          this.Open_Tiles = new HashSet<int>();
+          this.Changed = true;
+          this.refresh_panel_size();
+        }
+        this.MapPicture.Invalidate();
+        this.finish_map_operation(cancellation_token, status);
+        if (operation_error != null)
+          MessageBox.Show(this, operation_error.Message, "Map Generation Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        else if (result != null)
+          this.show_map_generation_result("Map Generation", result);
+      });
+    }
+  }
+
+  private void repair_map_experimental(
+    Map_State state,
+    int depth,
+    int radius,
+    int zoom,
+    CancellationToken cancellation_token)
+  {
+    Map_Generation_Result result = null;
+    Exception operation_error = null;
+    string status = "Map repair failed.";
+    try
+    {
+      Map_Generation_Engine engine = new Map_Generation_Engine(this.Tileset_Generator_Data, this.tileset_data);
+      result = engine.repair(
+        state,
+        new Map_Repair_Options()
+        {
+          Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+          Depth = depth,
+          Radius = radius
+        },
+        cancellation_token);
+      status = $"Map repair complete (experimental). Seed: {result.Seed}.";
+    }
+    catch (OperationCanceledException) when (cancellation_token.IsCancellationRequested)
+    {
+      status = "Map repair cancelled.";
+    }
+    catch (ArgumentException ex)
+    {
+      operation_error = ex;
+    }
+    catch (InvalidOperationException ex)
+    {
+      operation_error = ex;
+    }
+    catch (KeyNotFoundException ex)
+    {
+      operation_error = ex;
+    }
+    catch (IndexOutOfRangeException ex)
+    {
+      operation_error = ex;
+    }
+    finally
+    {
+      this.invoke_on_ui(() =>
+      {
+        if (operation_error == null && result != null)
+        {
+          this.copy_map_to_undo();
+          this.Map_Tiles = state.Tiles;
+          this.Drawn_Tiles = state.Drawn;
+          this.Locked_Tiles = state.Locked;
+          this.Terrain_Types = state.Terrain;
+          this.Changed = true;
+          this.refresh_panel_size();
+        }
+        this.MapPicture.Invalidate();
+        this.finish_map_operation(cancellation_token, status);
+        if (operation_error != null)
+          MessageBox.Show(this, operation_error.Message, "Map Repair Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        else if (result != null)
+          this.show_map_generation_result("Map Repair", result);
       });
     }
   }
@@ -2552,6 +2788,8 @@ label_27:
 
   private void undoToolStripMenuItem_Click(object sender, EventArgs e)
   {
+    if (this.Updating)
+      return;
     this.undo();
     this.refresh_panel_size();
     this.MapPicture.Invalidate();
@@ -2559,6 +2797,8 @@ label_27:
 
   private void resizeMapToolStripMenuItem_Click(object sender, EventArgs e)
   {
+    if (this.Updating)
+      return;
     Map_Resize_Form mapResizeForm = new Map_Resize_Form(this.Map_Width, this.Map_Height);
     if (mapResizeForm.ShowDialog() != DialogResult.OK)
       return;
@@ -2583,6 +2823,8 @@ label_27:
 
   private void clearPinnedTilesToolStripMenuItem_Click(object sender, EventArgs e)
   {
+    if (this.Updating)
+      return;
     if (this.Locked_Tiles != null)
     {
       for (int index1 = 0; index1 < this.Locked_Tiles.GetLength(1); ++index1)
@@ -2596,6 +2838,8 @@ label_27:
 
   private void clearTerrainTagsToolStripMenuItem_Click(object sender, EventArgs e)
   {
+    if (this.Updating)
+      return;
     if (this.Terrain_Types != null)
     {
       for (int index1 = 0; index1 < this.Terrain_Types.GetLength(1); ++index1)
@@ -2609,6 +2853,8 @@ label_27:
 
   private void prepareTilesetForEditsToolStripMenuItem_Click(object sender, EventArgs e)
   {
+    if (this.Updating)
+      return;
     this.prepareTilesetForEditsToolStripMenuItem.Enabled = false;
     this.update_tileset_same_corners();
     if (this.Tileset_Generator_Data == null)
@@ -2632,6 +2878,20 @@ label_27:
   {
     if (!(this.WidthUpDown.Value > 0M) || !(this.HeightUpDown.Value > 0M) || this.Updating)
       return;
+    Map_Generation_Algorithm algorithm = this.experimentalConstraintSolverToolStripMenuItem.Checked
+      ? Map_Generation_Algorithm.Experimental_Constraint
+      : Map_Generation_Algorithm.Legacy;
+    if (algorithm == Map_Generation_Algorithm.Experimental_Constraint)
+    {
+      int width = (int) this.WidthUpDown.Value;
+      int height = (int) this.HeightUpDown.Value;
+      int depth = (int) this.DepthUpDown.Value;
+      int experimental_zoom = this.Zoom;
+      Map_State state = this.create_experimental_generation_state(width, height);
+      CancellationToken experimental_cancellation = this.start_map_operation("Generating map (experimental)...");
+      new Thread(() => this.generate_map_experimental(state, depth, experimental_zoom, experimental_cancellation)).Start();
+      return;
+    }
     this.Text = string.Format("Map Editor - New Map");
     this.Map_Width = (int) this.WidthUpDown.Value;
     this.Map_Height = (int) this.HeightUpDown.Value;
@@ -2695,10 +2955,23 @@ label_27:
     lock (this.MapPicture)
       this.refresh_panel_size();
     this.refresh_panel_size();
-    this.copy_map_to_undo();
     int depth = (int) this.DepthUpDown.Value;
     int radius = (int) this.DistUpDown.Value;
+    Map_Generation_Algorithm algorithm = this.experimentalConstraintSolverToolStripMenuItem.Checked
+      ? Map_Generation_Algorithm.Experimental_Constraint
+      : Map_Generation_Algorithm.Legacy;
     int zoom = this.Zoom;
+    if (algorithm == Map_Generation_Algorithm.Experimental_Constraint)
+    {
+      Map_State state = this.create_experimental_repair_state();
+      CancellationToken experimental_cancellation = this.start_map_operation("Repairing map (experimental)...");
+      new Thread((ThreadStart) (() => this.repair_map_experimental(state, depth, radius, zoom, experimental_cancellation)))
+      {
+        IsBackground = false
+      }.Start();
+      return;
+    }
+    this.copy_map_to_undo();
     CancellationToken cancellation_token = this.start_map_operation("Repairing map...");
     new Thread((ThreadStart) (() => this.repair_map(depth, radius, zoom, cancellation_token)))
     {
@@ -2933,6 +3206,7 @@ label_27:
     this.prepareTilesetForEditsToolStripMenuItem = new ToolStripMenuItem();
     this.generateMapToolStripMenuItem = new ToolStripMenuItem();
     this.repairMapToolStripMenuItem = new ToolStripMenuItem();
+    this.experimentalConstraintSolverToolStripMenuItem = new ToolStripMenuItem();
     this.convertMapToTerrainTagsToolStripMenuItem = new ToolStripMenuItem();
     this.copyTerrainTagsImageToolStripMenuItem = new ToolStripMenuItem();
     this.importTerrainTagsFromClipboardImageToolStripMenuItem = new ToolStripMenuItem();
@@ -3324,11 +3598,12 @@ label_27:
     this.clearTerrainTagsToolStripMenuItem.Size = new Size(147, 22);
     this.clearTerrainTagsToolStripMenuItem.Text = "Clear Terrain Tags";
     this.clearTerrainTagsToolStripMenuItem.Click += new EventHandler(this.clearTerrainTagsToolStripMenuItem_Click);
-    this.mapGenerationToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[8]
+    this.mapGenerationToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[9]
     {
       (ToolStripItem) this.prepareTilesetForEditsToolStripMenuItem,
       (ToolStripItem) this.generateMapToolStripMenuItem,
       (ToolStripItem) this.repairMapToolStripMenuItem,
+      (ToolStripItem) this.experimentalConstraintSolverToolStripMenuItem,
       (ToolStripItem) this.convertMapToTerrainTagsToolStripMenuItem,
       (ToolStripItem) this.copyTerrainTagsImageToolStripMenuItem,
       (ToolStripItem) this.importTerrainTagsFromClipboardImageToolStripMenuItem,
@@ -3355,6 +3630,11 @@ label_27:
     this.repairMapToolStripMenuItem.Size = new Size((int) byte.MaxValue, 22);
     this.repairMapToolStripMenuItem.Text = "Repair Map";
     this.repairMapToolStripMenuItem.Click += new EventHandler(this.repairMapToolStripMenuItem_Click);
+    this.experimentalConstraintSolverToolStripMenuItem.CheckOnClick = true;
+    this.experimentalConstraintSolverToolStripMenuItem.Name = "experimentalConstraintSolverToolStripMenuItem";
+    this.experimentalConstraintSolverToolStripMenuItem.Size = new Size((int) byte.MaxValue, 22);
+    this.experimentalConstraintSolverToolStripMenuItem.Text = "Experimental Constraint Solver";
+    this.experimentalConstraintSolverToolStripMenuItem.ToolTipText = "Use the opt-in global backtracking solver for generation and repair.";
     this.convertMapToTerrainTagsToolStripMenuItem.Name = "convertMapToTerrainTagsToolStripMenuItem";
     this.convertMapToTerrainTagsToolStripMenuItem.Size = new Size((int) byte.MaxValue, 22);
     this.convertMapToTerrainTagsToolStripMenuItem.Text = "Convert Map to Terrain Tags";

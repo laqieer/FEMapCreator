@@ -47,6 +47,24 @@ internal static class Common_Options
     };
   }
 
+  internal static Option<string> algorithm()
+  {
+    return new Option<string>("--algorithm")
+    {
+      Description = "Map solver to use: legacy (default) or experimental.",
+      DefaultValueFactory = _ => "legacy",
+    }.AcceptOnlyFromAmong("legacy", "experimental");
+  }
+
+  internal static Option<int> experimental_search_node_limit()
+  {
+    return new Option<int>("--experimental-search-node-limit")
+    {
+      Description = "Maximum experimental backtracking nodes after the greedy incumbent. Must be positive.",
+      DefaultValueFactory = _ => 10000,
+    };
+  }
+
   internal static Option<int?> seed()
   {
     return new Option<int?>("--seed")

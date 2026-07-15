@@ -21,6 +21,7 @@ public sealed class CliIntegrationTests
     assert_success(repair_help);
     StringAssert.Contains(repair_help.Standard_Output, "MAR");
     StringAssert.Contains(repair_help.Standard_Output, "--width");
+    StringAssert.Contains(repair_help.Standard_Output, "--algorithm");
     StringAssert.Contains(repair_help.Standard_Output, ".mapgen.json");
     string packaged_readme = Path.Combine(Path.GetDirectoryName(cli_dll_path())!, "README.md");
     Assert.IsTrue(File.Exists(packaged_readme), "The CLI output must include its README.");
@@ -72,6 +73,53 @@ public sealed class CliIntegrationTests
     Assert.AreEqual(4, document.Width);
     Assert.AreEqual(3, document.Height);
     Assert.AreEqual("01020304", document.Tileset);
+  }
+
+  [TestMethod]
+  public async Task ExperimentalAlgorithmCanBeSelectedDirectlyAndFromSpec()
+  {
+    using Cli_Temporary_Directory directory = new Cli_Temporary_Directory();
+    string direct_output = directory.path("direct.map");
+    string spec_output = directory.path("spec.map");
+    string override_output = directory.path("override.map");
+    string spec_path = directory.path("experimental.json");
+
+    Cli_Process_Result direct = await run_cli_async(
+      "generate",
+      "--width", "3",
+      "--height", "2",
+      "--tileset", "01020304",
+      "--output", direct_output,
+      "--algorithm", "experimental",
+      "--experimental-search-node-limit", "10000",
+      "--seed", "77");
+
+    new Map_Job_Spec_Reader().write_job(spec_path, new Map_Job_Spec()
+    {
+      Version = 1,
+      Operation = "generate",
+      Width = 3,
+      Height = 2,
+      Tileset = "01020304",
+      Output = "spec.map",
+      Algorithm = "experimental",
+      ExperimentalSearchNodeLimit = 10000,
+      Seed = 77
+    });
+    Cli_Process_Result from_spec = await run_cli_async("generate", "--spec", spec_path);
+    Cli_Process_Result overridden = await run_cli_async(
+      "generate",
+      "--spec", spec_path,
+      "--output", override_output,
+      "--algorithm", "legacy");
+
+    assert_success(direct);
+    assert_success(from_spec);
+    assert_success(overridden);
+    StringAssert.Contains(direct.Standard_Output, "using experimental algorithm");
+    StringAssert.Contains(from_spec.Standard_Output, "using experimental algorithm");
+    Assert.IsFalse(overridden.Standard_Output.Contains("experimental algorithm", StringComparison.OrdinalIgnoreCase), overridden.describe());
+    CollectionAssert.AreEqual(File.ReadAllBytes(direct_output), File.ReadAllBytes(spec_output));
   }
 
   [TestMethod]

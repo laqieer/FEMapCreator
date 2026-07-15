@@ -1,5 +1,6 @@
 using System;
 using FE_Map_Creator.Cli;
+using FE_Map_Creator.Generation;
 
 #nullable disable
 namespace FE_Map_Creator.Cli.Execution;
@@ -19,23 +20,29 @@ internal static class Incomplete_Result_Writer
     bool force,
     bool allow_incomplete,
     bool require_complete,
-    int unresolved_count,
-    int seed,
+    Map_Generation_Result result,
     string action_label,
     Action<string> write_temporary)
   {
-    if (require_complete && unresolved_count > 0)
+    string algorithm_suffix = Algorithm_Selection.suffix(result.Algorithm);
+    string search_suffix = result.Search_Budget_Exhausted
+      ? $", experimental search budget exhausted after {result.Search_Node_Count} node(s)"
+      : "";
+    if (require_complete && result.Unresolved_Tile_Count > 0)
     {
       return new Cli_Execution_Result(
         Cli_Exit_Codes.Incomplete,
-        $"{action_label} produced {unresolved_count} unresolved cell(s) (seed {seed}); " +
+        $"{action_label}{algorithm_suffix} produced {result.Unresolved_Tile_Count} unresolved cell(s) " +
+        $"(seed {result.Seed}{search_suffix}); " +
         $"output was not written because --require-complete was specified.");
     }
 
     Safe_Output.write(output_path, force, write_temporary);
 
-    string summary = $"{action_label} \"{output_path}\" (seed {seed}, {unresolved_count} unresolved cell(s)).";
-    if (unresolved_count > 0 && !allow_incomplete)
+    string summary =
+      $"{action_label} \"{output_path}\"{algorithm_suffix} " +
+      $"(seed {result.Seed}, {result.Unresolved_Tile_Count} unresolved cell(s){search_suffix}).";
+    if (result.Unresolved_Tile_Count > 0 && !allow_incomplete)
       return new Cli_Execution_Result(Cli_Exit_Codes.Incomplete, summary);
     return Cli_Execution_Result.success(summary);
   }

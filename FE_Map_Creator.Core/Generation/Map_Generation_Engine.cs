@@ -62,6 +62,21 @@ public sealed class Map_Generation_Engine
     validate_depth(options.Depth);
 
     Random random = create_random(options.Seed, out int seed);
+    if (options.Algorithm == Map_Generation_Algorithm.Experimental_Constraint)
+    {
+      validate_search_node_limit(options.Experimental_Search_Node_Limit);
+      return new Experimental_Map_Generation_Solver(this._tileset_generation_data, this._terrain_tileset)
+        .generate(
+          state,
+          options.Depth,
+          options.Experimental_Search_Node_Limit,
+          random,
+          seed,
+          cancellation_token,
+          tile_drawn,
+          progress);
+    }
+    validate_algorithm(options.Algorithm);
     int unresolved = this.run_generation(state, options.Depth, random, cancellation_token, tile_drawn, progress);
     return new Map_Generation_Result(unresolved, seed);
   }
@@ -88,6 +103,22 @@ public sealed class Map_Generation_Engine
       throw new ArgumentOutOfRangeException(nameof(options), options.Radius, "Repair radius must be zero or greater.");
 
     Random random = create_random(options.Seed, out int seed);
+    if (options.Algorithm == Map_Generation_Algorithm.Experimental_Constraint)
+    {
+      validate_search_node_limit(options.Experimental_Search_Node_Limit);
+      return new Experimental_Map_Generation_Solver(this._tileset_generation_data, this._terrain_tileset)
+        .repair(
+          state,
+          options.Depth,
+          options.Radius,
+          options.Experimental_Search_Node_Limit,
+          random,
+          seed,
+          cancellation_token,
+          tile_drawn,
+          progress);
+    }
+    validate_algorithm(options.Algorithm);
     this.resolve_terrain_incompatible_cells(state);
     reopen_cells_around_holes(state, options.Radius, cancellation_token);
 
@@ -99,6 +130,18 @@ public sealed class Map_Generation_Engine
   {
     if (depth != 1 && depth != 2)
       throw new ArgumentException("Generation depth must be 1 or 2.", nameof(depth));
+  }
+
+  private static void validate_algorithm(Map_Generation_Algorithm algorithm)
+  {
+    if (algorithm != Map_Generation_Algorithm.Legacy)
+      throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, "Unknown map generation algorithm.");
+  }
+
+  private static void validate_search_node_limit(int search_node_limit)
+  {
+    if (search_node_limit <= 0)
+      throw new ArgumentOutOfRangeException(nameof(search_node_limit), search_node_limit, "Experimental search node limit must be positive.");
   }
 
   private static Random create_random(int? seed, out int actual_seed)

@@ -7,6 +7,18 @@ namespace FE_Map_Creator.Generation;
 public sealed class Map_Repair_Options
 {
   /// <summary>
+  /// Repair implementation to use. The existing frontier algorithm remains the
+  /// default; the constraint solver must be selected explicitly.
+  /// </summary>
+  public Map_Generation_Algorithm Algorithm { get; init; } = Map_Generation_Algorithm.Legacy;
+
+  /// <summary>
+  /// Maximum backtracking nodes explored by the experimental constraint solver after it
+  /// builds a fast greedy incumbent. Ignored by the legacy algorithm.
+  /// </summary>
+  public int Experimental_Search_Node_Limit { get; init; } = 10000;
+
+  /// <summary>
   /// Manhattan-distance radius (in tiles) around every terrain-incompatible or
   /// already-empty (tile index 0) cell that gets reopened for regeneration. Must be
   /// zero or greater; zero means only the empty cells themselves are reopened.

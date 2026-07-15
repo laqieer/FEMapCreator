@@ -1,15 +1,16 @@
 ﻿# Random Map Generation & Repair Methodology — FEMapCreator
 
 **Repository:** [laqieer/FEMapCreator](https://github.com/laqieer/FEMapCreator)  
-**HEAD SHA:** `ac3c871f3590e6162ad9ef245f63526608ff8d36`  
-**Date of analysis:** 2026-07-14  
+**Implementation snapshot:** Legacy default plus opt-in experimental constraint solver
+
+**Date of analysis:** 2026-07-15
 **Scope:** Entire corpus-training pipeline, generation algorithm, repair pipeline, CLI and WinForms interfaces, determinism guarantees, failure modes, test coverage, and design history.
 
 ---
 
 ## 2. Executive Summary
 
-FEMapCreator implements a **corpus-trained, frontier-expansion tile generator** resembling wave-function collapse, applied to Fire Emblem tactical map grids. A shared `Map_Generation_Engine` in `FE_Map_Creator.Core` is the single authoritative implementation; both the WinForms GUI and the CLI delegate to it directly — production WinForms generation calls the Core engine, not any legacy helper. The engine operates on an in-place mutable `Map_State` (four parallel `[x,y]` arrays: tiles, drawn, locked, terrain) and exposes two public entry points: `generate()` for fresh fill and `repair()` for a three-phase clear-and-fill pipeline. A priority-queue frontier expansion drives all cell placement; a bounded iterative backtracking lookahead (`test_valid_tiles`) with scratch-state isolation prevents stale transient assignments from contaminating the live map. The CLI adds seed reporting, batch seed derivation, exit-code discipline, and atomic output; WinForms silently discards the seed and unresolved-cell count returned by the engine.
+FEMapCreator has two corpus-trained map solvers behind the shared `Map_Generation_Engine`. The **legacy frontier solver** remains the default in Core, CLI, job specs, and WinForms; it uses priority-driven expansion plus bounded depth-1/depth-2 lookahead. The opt-in **experimental constraint solver** uses global seeded backtracking, forward domain propagation, and budgeted branch-and-bound to seek zero unresolved cells and improve the best incomplete assignment when a complete assignment is not found. Both operate on `Map_State` (`Tiles`, `Drawn`, `Locked`, and `Terrain`) and support generation and repair. CLI selection uses `--algorithm legacy|experimental`; job specs use `"algorithm"`; WinForms exposes an unchecked **Experimental Constraint Solver** menu item. CLI and WinForms both report seeds, unresolved counts, progress, budget exhaustion, and cooperative cancellation.
 
 ---
 
@@ -226,6 +227,31 @@ The algorithm establishes **forward sequential feasibility**: for each surviving
 - Weighted bag: O(C · W_max) per selection, where W_max ≤ 32,767 (`short` maximum)[^27].
 - Scratch clone dominates at map scale: O(N) allocations of O(N) arrays per generation = O(N²) total allocation work.
 
+### 7.4 Experimental Global Constraint Solver
+
+The experimental path is selected explicitly through
+`Map_Generation_Algorithm.Experimental_Constraint`; legacy remains the default.
+`Experimental_Tile_Model` canonicalizes identical tiles, retains terrain-compatible
+actual aliases, validates positive bidirectional adjacency edges, and precomputes compact
+neighbor bitsets.
+
+`Experimental_Map_Generation_Solver` builds a domain for every open, unlocked cell.
+Whenever a real tile is assigned, its allowed-neighbor bitset is intersected into each
+unassigned cardinal neighbor. The search chooses a minimum-domain cell, breaks ties by
+neighbor priority and the seeded RNG, and orders candidates by learned adjacency weights
+plus optional depth-2 support scoring. Every branch is reversible through a word-level
+domain-change trail.
+
+Unresolved is an explicit assignment state, not tile index `0`. A fast greedy pass first
+produces an incumbent. Real candidates are then tried before the penalized unresolved
+branch, and branch-and-bound retains every improvement. A zero-unresolved solution is
+globally optimal. Incomplete optimality is proven only when search finishes before the
+configurable node limit (10,000 by default); otherwise `Map_Generation_Result` and CLI
+output report budget exhaustion with the best assignment found so far. Search runs on
+cloned arrays, only the final assignment is copied to the caller, and cancellation
+commits nothing. The worst case remains exponential, which is why this solver is
+experimental and never selected automatically.
+
 ---
 
 ## 8. Repair Methodology
@@ -292,11 +318,12 @@ The public-domain splitmix64 finalizer. The `(uint)base_seed` cast means negativ
 
 | Aspect | CLI | WinForms |
 |---|---|---|
-| Seed reported | Always (stdout summary line) | Never — result discarded |
-| Unresolved count | Always (stdout + exit code) | Never — result discarded |
-| Cancellation | `CancellationToken` (Ctrl+C) | `CancellationToken.None` hardcoded |
+| Seed reported | Always (stdout summary line) | Status bar; warning for incomplete results |
+| Unresolved count | Always (stdout + exit code) | Warning dialog when nonzero |
+| Cancellation | `CancellationToken` (Ctrl+C) | Cancel button backed by `CancellationTokenSource` |
 | Threading | `Task.Run` (thread pool) | `new Thread(...).Start()` (foreground) |
-| Depth control | `--depth 1\|2` (default 1) | Read from `DepthUpDown`, hard-coded to 1 in `generate_map()` |
+| Algorithm | `--algorithm legacy\|experimental` | Unchecked experimental menu toggle |
+| Depth control | `--depth 1\|2` (default 1) | `DepthUpDown`; legacy generation retains depth 1 |
 | Seed control | `--seed N` or auto | No UI for seed |
 | Output safety | Atomic temp→target move | Direct write, no overwrite protection |
 
@@ -315,25 +342,36 @@ The public-domain splitmix64 finalizer. The `(uint)base_seed` cast means negativ
 
 ## 10. Failure Modes and Correctness Risks
 
-### 10.1 Locked Terrain-Incompatible Cells Become Permanent Tile-0 Holes
+### 10.1 Legacy Tile-0 Ambiguity
 
-Phase 1 (`resolve_terrain_incompatible_cells`) has **no locked guard**[^37]. A locked cell with a terrain-incompatible tile is silently tile-zeroed: final state is `Tiles=0, Drawn=true, Locked=true`. Phase 2 collects it as a hole and may reopen adjacent unlocked cells. Phase 3 cannot redraw it (locked). The cell is a permanent zero-tile hole. No test covers this path (the repair cancellation test uses all-zero terrain so phase 1 exits immediately at the null-tileset check)[^38].
+Legacy generation still uses drawn tile `0` as its unresolved representation, while tile
+`0` is also a legitimate tile. Experimental search keeps unresolved as `Drawn=false`
+internally and only uses tile `0` when serializing an unresolved cell through map formats
+that do not persist drawn state.
 
-### 10.2 Repair Pre-Pass Mutates Before `Updating` Guard
+### 10.2 Imported Repair-Hole Ambiguity
 
-`repairMapToolStripMenuItem_Click`[^39] runs its own terrain-clearing loop on the UI thread (lines 2590–2601), then checks `Updating` at line 2603. If `Updating` is already true, the scan has already zeroed some tiles but the thread is never started and `copy_map_to_undo()` is never called — leaving the map in a modified state without an undo snapshot.
+Text, MAR, and TMX map formats do not store `Drawn`, so repair continues treating imported
+tile `0` as a hole for compatibility. A legitimate persisted tile-0 cell cannot be
+distinguished from a hole without a sidecar drawn mask.
 
-### 10.3 Tile-0 Ambiguity
+### 10.3 Legacy Greedy Dead Ends
 
-Tile 0 is simultaneously a **legitimate tile index** (per `Map_State.cs` doc[^40]) and the **unresolved/hole sentinel**. `Drawn` is the sole authority for "resolved". Phase 2's hole scan (`state.Tiles[x,y] == 0`) cannot distinguish a legitimately drawn tile-0 cell from an unresolved or terrain-cleared tile-0 cell — a pre-existing drawn tile-0 is treated as a hole and its neighbors are reopened[^41]. TMX adds a second ambiguity: TMX `gid=0` (empty cell) and tile-index-0 both read back as `Tiles=0`.
+The default solver still commits a local choice permanently and marks a later
+contradiction unresolved. This behavior is retained for compatibility and stable seeded
+output. The experimental solver exists specifically to backtrack across those choices.
 
-### 10.4 No Retry on Unresolved Cells
+### 10.4 Experimental Worst-Case Runtime
 
-If `test_valid_tiles` returns no valid candidate for a cell, it is immediately marked unresolved and the loop continues. There is no per-cell retry and no whole-map restart. A re-run with a different seed is the only recovery mechanism, and the WinForms UI does not report unresolved counts to prompt the user[^42].
+The experimental branch-and-bound search has exponential worst-case behavior,
+particularly when proving the minimum unresolved count for a contradictory map. It
+checks cancellation throughout the search and is never enabled by default.
 
-### 10.5 WinForms Unresolved Result Discarded
+### 10.5 Different Seeded Layouts by Algorithm
 
-`generate_map()` and `repair_map()`[^43] call `engine.generate()`/`engine.repair()` but assign no variable to the returned `Map_Generation_Result`. Neither the seed nor the unresolved count is displayed or logged. Users have no way to reproduce a generated map or know it is incomplete.
+Legacy and experimental modes consume the RNG in different decision orders, so the same
+seed is deterministic within each algorithm but does not imply identical maps across
+algorithms.
 
 ### 10.6 Short Weight Overflow
 
@@ -395,14 +433,11 @@ Selected coverage:
 
 | Gap | Detail |
 |---|---|
-| Depth=2 | No test uses `Depth=2`; the backtracking rings 0+1+2 path is uncovered |
-| Negative terrain | `TerrainConstraintFiltersCandidates` tests only positive tags; negative (forbidden-tag) path untested |
 | Repair radius > trivial | `RepairPreservesLockedCellsAndFillsHole` uses radius=1 on a 3×1 map; multi-cell diamond not isolated |
-| Locked + terrain incompatible | `RepairPreservesLockedCellsAndFillsHole` uses null terrain tileset; phase 1 is a no-op |
 | `fix_identical` | No test at all for the ~130-line group-merging algorithm |
-| `Seed_Derivation.derive` | No unit test for the splitmix64 logic |
 | WinForms code paths | No tests for the WinForms `generate_map` / `repair_map` wrappers |
-| Large map scaling | No tests or benchmarks for maps ≥ 32×32 |
+| Experimental pathological search | No fixed work-budget behavior or adversarial large-map benchmark |
+| Persisted unresolved state | Map codecs cannot distinguish an unresolved serialized `0` from legitimate tile index `0` |
 
 ---
 
@@ -437,61 +472,32 @@ All commits occurred on **2026-07-12** within approximately 4 hours[^56].
 
 ---
 
-## 13. Practical Recommendations
+## 13. Experimental Evaluation Priorities
 
-*Prioritized: correctness first, then observability, tests, performance.*
+### E1 — Keep legacy as the default
 
-### C1 — [CORRECTNESS] Surface seed and unresolved count in WinForms *(High)*
+Do not promote the constraint solver based only on synthetic fixtures. Compare
+completion rate, visual quality, determinism, and runtime across bundled FE6/FE7/FE8
+tilesets and real repair inputs first. The initial fixed-seed comparison is recorded in
+[`experimental-solver-benchmark.md`](experimental-solver-benchmark.md).
 
-The `Map_Generation_Result` returned by `engine.generate()` and `engine.repair()` is silently discarded[^60]. Display `result.Seed` in the status bar and show a warning when `result.Unresolved_Tile_Count > 0`. Without this, users cannot reproduce maps and may not notice incomplete fills.
+### E2 — Bound pathological search
 
-### C2 — [CORRECTNESS] Guard `resolve_terrain_incompatible_cells` against locked cells *(High)*
+Cancellation is mandatory, but future experimental iterations may also need an explicit
+search-work budget and a distinct "budget exhausted" diagnostic so unattended CLI
+batches cannot spend unbounded time proving an optimum.
 
-Add `if (state.Locked[x, y]) continue;` inside the loop in phase 1[^61]. A locked cell with a wrong terrain tag currently becomes a permanent tile-0 hole — a semantics violation, since "locked" should mean "never touched by the engine".
+### E3 — Preserve side-by-side compatibility coverage
 
-### C3 — [CORRECTNESS] Short weight overflow protection *(Medium)*
+Every solver change should run the unchanged legacy seeded fixtures plus experimental
+fixtures for global backtracking, minimum unresolved count, legitimate tile `0`, terrain,
+identical aliases, repair, and cancellation.
 
-In `setup_tileset_data`, replace `(short)((int)w + 1)` with `(short)Math.Min(short.MaxValue, (int)w + 1)` or promote the weight type to `int`[^62]. A corpus with ≥32,767 identical adjacencies silently wraps the weight negative, causing weighted-bag logic to produce zero or negative loop counts.
+### E4 — Revisit persisted unresolved metadata
 
-### C4 — [CORRECTNESS] Add WinForms cancellation *(Medium)*
-
-Pass a `CancellationToken` into the engine call backed by a form-level `CancellationTokenSource`; wire a "Cancel" button enabled during generation[^63]. Currently the only way to stop a long depth-2 generation on a large map is to kill the process.
-
-### O1 — [OBSERVABILITY] Report unresolved cells silently skipped in WinForms repair *(Medium)*
-
-When `repairMapToolStripMenuItem_Click` finds zero holes it returns without any message[^64]. Show "Nothing to repair" so the user knows the operation was evaluated.
-
-### O2 — [OBSERVABILITY] Wire `IProgress<int>` in CLI executor *(Low)*
-
-Both `run_generate_job` and `run_repair_job` pass `null` for the `IProgress<int>` parameter[^65]. For long jobs a stderr progress indicator would improve usability.
-
-### T1 — [TESTS] Add depth=2 unit tests *(High)*
-
-No test exercises `Depth=2`. Add a 3-tile dataset where depth-1 placement creates an uncloseable neighbor but depth-2 succeeds; verify output correctness.
-
-### T2 — [TESTS] Add negative terrain constraint test *(Medium)*
-
-`TerrainConstraintFiltersCandidates` covers only positive terrain. Add a test with `terrain=-2` (forbid tag 2).
-
-### T3 — [TESTS] Add locked+terrain-incompatible repair test *(Medium)*
-
-Cover the correctness risk in §10.1: a locked cell with a wrong terrain tag should (after the fix in C2) be preserved, not tile-zeroed.
-
-### T4 — [TESTS] Add `fix_identical` coverage *(Medium)*
-
-The ~130-line `Tileset_Generation_Data.fix_identical()` is completely untested. Add unit tests for group-merge, edge remapping, and the first-wins collision case.
-
-### P1 — [PERFORMANCE] Build reverse index for `identical_tiles` *(Medium)*
-
-Pre-build `Dictionary<short, List<short>>` (canonical → aliases) in the constructor instead of scanning all 297 entries linearly per identical-tile draw[^66].
-
-### P2 — [PERFORMANCE] Reuse scratch arrays in `test_valid_tiles` *(Medium)*
-
-Allocate the scratch `Tiles` and `Drawn` arrays once in `run_generation` and reset only the `locs`-bounded cells after each lookahead, eliminating O(N²) total clone allocation[^67].
-
-### P3 — [PERFORMANCE] Cache frontier max-priority *(Low)*
-
-`pick_first_open_tile` makes two full passes per draw. Track `current_max_priority` as a field, invalidated only when a tile is removed from the frontier[^68].
+Experimental in-memory state distinguishes unresolved from legitimate tile `0`, but map
+formats do not. A future versioned sidecar could persist `Drawn`/unresolved coordinates
+without changing existing `.map`, `.mar`, or TMX compatibility.
 
 ---
 
@@ -499,13 +505,14 @@ Allocate the scratch `Tiles` and `Drawn` arrays once in `run_generation` and res
 
 ### Certain (directly verified in source)
 
-- Complete `run_generation` loop logic, `test_valid_tiles` backtracking mechanics, `valid_tiles` intersection, `resolve_terrain_incompatible_cells` (no locked guard), `reopen_cells_around_holes` (two-pass snapshot), `create_random` seed handling — all read directly from `Map_Generation_Engine.cs`[^15][^22][^29][^30][^32].
+- Legacy `run_generation`, bounded `test_valid_tiles`, and repair preprocessing remain the default implementation.
+- Experimental model construction, domain intersections, weighted ordering, reversible trail, unresolved branch-and-bound, and transactional publication are implemented in `Experimental_Tile_Model.cs` and `Experimental_Map_Generation_Solver.cs`.
 - `Tile_Data` field types and merge constructor formulas — read from `Tile_Data.cs`[^2][^6].
 - `Map_State` documentation (tile-0 is legitimate) — read from `Map_State.cs`[^40].
 - `Seed_Derivation.derive` splitmix64 code — read from `Seed_Derivation.cs`[^34].
 - Corpus weight formula: first observation → init 1 then +1 = 2 (n+1 rule) — verified from `setup_tileset_data` in `FE_Map_Creator_Form.cs`[^4].
 - `Priority` = 0 after corpus training (default constructor, never written by `setup_tileset_data`) — verified[^3][^13].
-- WinForms result discarded (grep for `Unresolved_Tile_Count` returns no hits in `FE_Map_Creator/`) — verified[^43].
+- WinForms reports seeds and unresolved counts and exposes an unchecked experimental solver toggle.
 - Commit timeline from git reflog at `C:\FEMapCreator\.git\logs\HEAD`[^56].
 - Core blob SHAs identical at `578b0549` and `ac3c871f` — confirmed via GitHub API[^58].
 

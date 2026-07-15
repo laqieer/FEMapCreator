@@ -29,6 +29,8 @@ internal static class Generate_Command
       Description = "Path to a template map providing initial drawn/locked tile values.",
     };
     Option<string> spec_option = Common_Options.spec();
+    Option<string> algorithm_option = Common_Options.algorithm();
+    Option<int> experimental_search_node_limit_option = Common_Options.experimental_search_node_limit();
     Option<int> depth_option = Common_Options.depth();
     Option<int?> seed_option = Common_Options.seed();
     Option<string> assets_dir_option = Common_Options.assets_dir();
@@ -60,6 +62,8 @@ internal static class Generate_Command
       format_option,
       template_option,
       spec_option,
+      algorithm_option,
+      experimental_search_node_limit_option,
       depth_option,
       seed_option,
       assets_dir_option,
@@ -84,11 +88,13 @@ internal static class Generate_Command
       bool allow_incomplete = result.GetValue(allow_incomplete_option);
       bool require_complete = result.GetValue(require_complete_option);
       int depth = Cli_Validation.bound_value(result, depth_option);
+      int experimental_search_node_limit = Cli_Validation.bound_value(result, experimental_search_node_limit_option);
 
       Cli_Validation.positive(result, width, "--width");
       Cli_Validation.positive(result, height, "--height");
       Cli_Validation.positive(result, count, "--count");
       Cli_Validation.valid_depth(result, depth);
+      Cli_Validation.positive(result, experimental_search_node_limit, "--experimental-search-node-limit");
       Cli_Validation.mutually_exclusive_flags(
         result, allow_incomplete, "--allow-incomplete", require_complete, "--require-complete");
 
@@ -120,6 +126,8 @@ internal static class Generate_Command
         Format = Cli_Validation.parse_format(parse_result.GetValue(format_option)),
         Template = parse_result.GetValue(template_option),
         Spec = parse_result.GetValue(spec_option),
+        Algorithm = Cli_Binding.explicit_value_or_null(parse_result, algorithm_option),
+        Experimental_Search_Node_Limit = Cli_Binding.explicit_value_or_null(parse_result, experimental_search_node_limit_option),
         Depth = Cli_Binding.explicit_value_or_null(parse_result, depth_option),
         Seed = parse_result.GetValue(seed_option),
         Assets_Dir = parse_result.GetValue(assets_dir_option),

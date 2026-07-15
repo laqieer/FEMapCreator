@@ -494,6 +494,294 @@ public sealed class MapGenerationEngineTests
   }
 
   [TestMethod]
+  public void ExperimentalDepthOneBacktracksAcrossLegacyDeadEnd()
+  {
+    Tileset_Generation_Data data = create_depth_fixture_data();
+    Map_State state = depth_fixture_state();
+
+    Map_Generation_Result result = new Map_Generation_Engine(data).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Depth = 1,
+        Seed = 0
+      });
+
+    Assert.AreEqual(Map_Generation_Algorithm.Experimental_Constraint, result.Algorithm);
+    Assert.IsTrue(result.Is_Complete);
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    assert_horizontal_adjacency(data, state);
+  }
+
+  [TestMethod]
+  public void ExperimentalReportsExhaustedSearchBudget()
+  {
+    Map_State state = depth_fixture_state();
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_depth_fixture_data()).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Depth = 1,
+        Experimental_Search_Node_Limit = 1,
+        Seed = 0
+      });
+
+    Assert.IsTrue(result.Search_Budget_Exhausted);
+    Assert.AreEqual(1, result.Search_Node_Count);
+  }
+
+  [TestMethod]
+  public void ExperimentalRejectsNonPositiveSearchBudget()
+  {
+    Assert.Throws<ArgumentOutOfRangeException>(() =>
+      new Map_Generation_Engine(create_uniform_data(1)).generate(
+        blank_state(1, 1),
+        new Map_Generation_Options()
+        {
+          Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+          Experimental_Search_Node_Limit = 0
+        }));
+  }
+
+  [TestMethod]
+  public void ExperimentalImpossibleTerrainReturnsMinimumOpenCells()
+  {
+    Data_Tileset metadata = new Data_Tileset()
+    {
+      Terrain_Tags = new List<int>() { 0, 1, 2 }
+    };
+    Map_State state = blank_state(2, 2);
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+        state.Terrain[x, y] = 999;
+    }
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_connected_data(1, 2), metadata).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Seed = 13
+      });
+
+    Assert.AreEqual(4, result.Unresolved_Tile_Count);
+    Assert.HasCount(4, result.Unresolved_Cells);
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+      {
+        Assert.AreEqual(0, state.Tiles[x, y]);
+        Assert.IsFalse(state.Drawn[x, y]);
+      }
+    }
+  }
+
+  [TestMethod]
+  public void ExperimentalTreatsTileZeroAsValidCandidate()
+  {
+    Map_State state = blank_state(2, 2);
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_uniform_data(0)).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Seed = 17
+      });
+
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    assert_all_tiles(state, 0);
+  }
+
+  [TestMethod]
+  public void ExperimentalDeduplicatesRedundantGenerationKeys()
+  {
+    Tileset_Generation_Data data = create_alias_data();
+    data.generation_data[2] = new Tile_Data(data.generation_data[1]);
+    Map_State state = blank_state(4, 1);
+
+    Map_Generation_Result result = new Map_Generation_Engine(data).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Seed = 22
+      });
+
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    Assert.IsTrue(state.Drawn.Cast<bool>().All(drawn => drawn));
+  }
+
+  [TestMethod]
+  public void ExperimentalMinimizesStructuralDeadEndToOneCell()
+  {
+    Tileset_Generation_Data data = create_generation_data();
+    data.generation_data[1] = create_tile_data((6, 2, 1));
+    data.generation_data[2] = create_tile_data((4, 1, 1));
+    Map_State state = blank_state(3, 1);
+    state.Tiles[0, 0] = 1;
+    state.Drawn[0, 0] = true;
+    state.Locked[0, 0] = true;
+
+    Map_Generation_Result result = new Map_Generation_Engine(data).generate(
+      state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Seed = 21
+      });
+
+    Assert.AreEqual(1, result.Unresolved_Tile_Count);
+    Assert.HasCount(1, result.Unresolved_Cells);
+    Assert.AreEqual(1, state.Drawn.Cast<bool>().Count(drawn => !drawn));
+  }
+
+  [TestMethod]
+  public void ExperimentalWithSameSeedIsDeterministic()
+  {
+    Tileset_Generation_Data data = create_connected_data(1, 2);
+    Map_State first = blank_state(6, 5);
+    Map_State second = blank_state(6, 5);
+    Map_Generation_Options options = new Map_Generation_Options()
+    {
+      Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+      Depth = 2,
+      Seed = 42
+    };
+
+    new Map_Generation_Engine(data).generate(first, options);
+    new Map_Generation_Engine(data).generate(second, options);
+
+    CollectionAssert.AreEqual(first.Tiles.Cast<int>().ToArray(), second.Tiles.Cast<int>().ToArray());
+    CollectionAssert.AreEqual(first.Drawn.Cast<bool>().ToArray(), second.Drawn.Cast<bool>().ToArray());
+  }
+
+  [TestMethod]
+  public void ExperimentalRepairFillsHole()
+  {
+    Map_State state = new Map_State(
+      new int[3, 1]
+      {
+        { 1 },
+        { 0 },
+        { 1 }
+      },
+      new bool[3, 1]
+      {
+        { true },
+        { false },
+        { true }
+      },
+      new bool[3, 1],
+      new int[3, 1]);
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_uniform_data(1)).repair(
+      state,
+      new Map_Repair_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Radius = 1,
+        Depth = 1,
+        Seed = 18
+      });
+
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    assert_all_tiles(state, 1);
+  }
+
+  [TestMethod]
+  public void ExperimentalRepairPreservesDrawnTileZero()
+  {
+    Map_State state = new Map_State(
+      new int[3, 1]
+      {
+        { 0 },
+        { 0 },
+        { 0 }
+      },
+      filled_bool_array(3, 1, true),
+      new bool[3, 1],
+      new int[3, 1]);
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_uniform_data(0)).repair(
+      state,
+      new Map_Repair_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Radius = 1,
+        Seed = 20
+      });
+
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    assert_all_tiles(state, 0);
+  }
+
+  [TestMethod]
+  public void ExperimentalRepairUsesLockedOpenZeroAsHoleOrigin()
+  {
+    Map_State state = new Map_State(
+      new int[2, 1]
+      {
+        { 0 },
+        { 1 }
+      },
+      new bool[2, 1]
+      {
+        { false },
+        { true }
+      },
+      new bool[2, 1]
+      {
+        { true },
+        { false }
+      },
+      new int[2, 1]);
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_uniform_data(1)).repair(
+      state,
+      new Map_Repair_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Radius = 1,
+        Seed = 23
+      });
+
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    Assert.AreEqual(0, state.Tiles[0, 0]);
+    Assert.IsTrue(state.Drawn[0, 0]);
+    Assert.IsTrue(state.Locked[0, 0]);
+    Assert.AreEqual(1, state.Tiles[1, 0]);
+    Assert.IsTrue(state.Drawn[1, 0]);
+  }
+
+  [TestMethod]
+  public void ExperimentalCancellationDoesNotMutateState()
+  {
+    using CancellationTokenSource cancellation = new CancellationTokenSource();
+    cancellation.Cancel();
+    Map_State state = blank_state(3, 3);
+    int[] expected_tiles = state.Tiles.Cast<int>().ToArray();
+    bool[] expected_drawn = state.Drawn.Cast<bool>().ToArray();
+
+    Assert.Throws<OperationCanceledException>(() =>
+      new Map_Generation_Engine(create_uniform_data(1)).generate(
+        state,
+        new Map_Generation_Options()
+        {
+          Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+          Seed = 19
+        },
+        cancellation.Token));
+
+    CollectionAssert.AreEqual(expected_tiles, state.Tiles.Cast<int>().ToArray());
+    CollectionAssert.AreEqual(expected_drawn, state.Drawn.Cast<bool>().ToArray());
+  }
+
+  [TestMethod]
   public void GenerateHonorsCancellation()
   {
     using CancellationTokenSource cancellation = new CancellationTokenSource();

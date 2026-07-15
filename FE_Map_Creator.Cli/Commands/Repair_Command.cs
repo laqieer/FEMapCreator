@@ -25,6 +25,8 @@ internal static class Repair_Command
       DefaultValueFactory = _ => false,
     };
     Option<string> spec_option = Common_Options.spec();
+    Option<string> algorithm_option = Common_Options.algorithm();
+    Option<int> experimental_search_node_limit_option = Common_Options.experimental_search_node_limit();
     Option<string> tileset_option = Common_Options.tileset();
     Option<int?> width_option = Common_Options.width();
     Option<int?> height_option = Common_Options.height();
@@ -69,6 +71,8 @@ internal static class Repair_Command
       output_option,
       in_place_option,
       spec_option,
+      algorithm_option,
+      experimental_search_node_limit_option,
       tileset_option,
       width_option,
       height_option,
@@ -100,6 +104,7 @@ internal static class Repair_Command
       int? height = result.GetValue(height_option);
       int repair_radius = Cli_Validation.bound_value(result, repair_radius_option);
       int depth = Cli_Validation.bound_value(result, depth_option);
+      int experimental_search_node_limit = Cli_Validation.bound_value(result, experimental_search_node_limit_option);
       bool allow_incomplete = result.GetValue(allow_incomplete_option);
       bool require_complete = result.GetValue(require_complete_option);
 
@@ -107,6 +112,7 @@ internal static class Repair_Command
       Cli_Validation.positive(result, height, "--height");
       Cli_Validation.non_negative(result, repair_radius, "--repair-radius");
       Cli_Validation.valid_depth(result, depth);
+      Cli_Validation.positive(result, experimental_search_node_limit, "--experimental-search-node-limit");
       Cli_Validation.mutually_exclusive_flags(
         result, allow_incomplete, "--allow-incomplete", require_complete, "--require-complete");
 
@@ -141,6 +147,8 @@ internal static class Repair_Command
         Output = parse_result.GetValue(output_option),
         In_Place = parse_result.GetValue(in_place_option),
         Spec = parse_result.GetValue(spec_option),
+        Algorithm = Cli_Binding.explicit_value_or_null(parse_result, algorithm_option),
+        Experimental_Search_Node_Limit = Cli_Binding.explicit_value_or_null(parse_result, experimental_search_node_limit_option),
         Tileset = parse_result.GetValue(tileset_option),
         Width = parse_result.GetValue(width_option),
         Height = parse_result.GetValue(height_option),
