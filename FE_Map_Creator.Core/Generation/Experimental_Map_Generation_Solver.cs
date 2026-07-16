@@ -124,12 +124,13 @@ internal sealed class Experimental_Map_Generation_Solver
       Nogood_Cache nogoods = new Nogood_Cache(nogood_limit);
       Search_Result best_result = null;
       int best_unresolved = int.MaxValue;
+      double best_diversity_penalty = double.MaxValue;
       for (int restart = 0; restart < restart_count && component_remaining > 0; ++restart)
       {
         int restarts_left = restart_count - restart;
         int restart_budget;
         if (restart == 0 && restart_count > 1)
-          restart_budget = Math.Min(component_remaining, Math.Max(1, component_budget / 10));
+          restart_budget = Math.Min(component_remaining, Math.Max(1, component_budget / 2));
         else if (restart + 1 == restart_count)
           restart_budget = component_remaining;
         else
@@ -161,10 +162,15 @@ internal sealed class Experimental_Map_Generation_Solver
         component_remaining -= restart_result.Search_Node_Count;
         remaining_budget -= restart_result.Search_Node_Count;
         int restart_unresolved = restart_result.Assignments.Count(assignment => assignment < 0);
-        if (restart_unresolved < best_unresolved)
+        double restart_diversity_penalty =
+          diversity_penalty(component, restart_result.Assignments, working.Width);
+        if (restart_unresolved < best_unresolved
+          || restart_unresolved == best_unresolved
+            && restart_diversity_penalty < best_diversity_penalty)
         {
           best_result = restart_result;
           best_unresolved = restart_unresolved;
+          best_diversity_penalty = restart_diversity_penalty;
           component_best_restarts[component_index] = restart;
         }
         if (restart_unresolved == 0)
@@ -327,6 +333,64 @@ internal sealed class Experimental_Map_Generation_Solver
     return scores;
   }
 
+  private static double diversity_penalty(
+    IReadOnlyList<Cell> cells,
+    IReadOnlyList<int> assignments,
+    int map_width)
+  {
+    Dictionary<int, int> counts = new Dictionary<int, int>();
+    Dictionary<int, int> assignments_by_cell = new Dictionary<int, int>();
+    int assigned_count = 0;
+    for (int variable = 0; variable < assignments.Count; ++variable)
+    {
+      int assignment = assignments[variable];
+      if (assignment < 0)
+        continue;
+      ++assigned_count;
+      counts[assignment] = counts.TryGetValue(assignment, out int count) ? count + 1 : 1;
+      Cell cell = cells[variable];
+      assignments_by_cell[cell.X + cell.Y * map_width] = assignment;
+    }
+    if (assigned_count < 20)
+      return 0.0;
+
+    int dominant_count = counts.Values.Max();
+    double dominant_share = dominant_count / (double) assigned_count;
+    double entropy = 0.0;
+    foreach (int count in counts.Values)
+    {
+      double probability = count / (double) assigned_count;
+      entropy -= probability * Math.Log2(probability);
+    }
+    int checked_neighbors = 0;
+    int same_neighbors = 0;
+    foreach (KeyValuePair<int, int> assignment in assignments_by_cell)
+    {
+      int x = assignment.Key % map_width;
+      int y = assignment.Key / map_width;
+      if (x + 1 < map_width
+        && assignments_by_cell.TryGetValue(x + 1 + y * map_width, out int right))
+      {
+        ++checked_neighbors;
+        if (right == assignment.Value)
+          ++same_neighbors;
+      }
+      if (assignments_by_cell.TryGetValue(x + (y + 1) * map_width, out int down))
+      {
+        ++checked_neighbors;
+        if (down == assignment.Value)
+          ++same_neighbors;
+      }
+    }
+    double same_neighbor_share = checked_neighbors == 0
+      ? 0.0
+      : same_neighbors / (double) checked_neighbors;
+    double dominant_penalty = Math.Max(0.0, dominant_share - 0.25) * assigned_count * 0.25;
+    double repetition_penalty = Math.Max(0.0, same_neighbor_share - 0.35) * assigned_count * 0.10;
+    double entropy_penalty = Math.Max(0.0, 4.0 - entropy) * 2.0;
+    return dominant_penalty + repetition_penalty + entropy_penalty;
+  }
+
   private static int derive_seed(int seed, int component_index)
   {
     return derive_seed(seed, component_index, 0);
@@ -475,6 +539,7 @@ internal sealed class Experimental_Map_Generation_Solver
     private readonly ulong[][] _domains;
     private readonly int[] _domain_counts;
     private readonly int[] _assignments;
+    private readonly int[] _candidate_usage_counts;
     private readonly List<Domain_Change> _trail = new List<Domain_Change>();
     private readonly SortedDictionary<int, SortedDictionary<short, Indexed_Variable_Set>> _selection_buckets =
       new SortedDictionary<int, SortedDictionary<short, Indexed_Variable_Set>>();
@@ -524,6 +589,7 @@ internal sealed class Experimental_Map_Generation_Solver
       this._domains = new ulong[this._cells.Length][];
       this._domain_counts = new int[this._cells.Length];
       this._assignments = Enumerable.Repeat(Unassigned, this._cells.Length).ToArray();
+      this._candidate_usage_counts = new int[this._model.Candidate_Count];
       this._selection_priorities = new short[this._cells.Length];
       this._best_unresolved = this._cells.Length + 1;
 
@@ -812,7 +878,9 @@ internal sealed class Experimental_Map_Generation_Solver
       foreach (int candidate in this.ordered_complete_candidates(variable, candidates))
       {
         this._assignments[variable] = candidate;
+        ++this._candidate_usage_counts[candidate];
         Complete_Outcome child = this.complete_search();
+        --this._candidate_usage_counts[candidate];
         this._assignments[variable] = Unassigned;
         if (child.Success || child.Budget_Exhausted)
           return child;
@@ -899,13 +967,12 @@ internal sealed class Experimental_Map_Generation_Solver
       foreach (int candidate in candidates)
       {
         int support = this.complete_candidate_support(variable, candidate);
-        long weight = this.candidate_weight(variable, candidate);
+        double weight = this.selection_weight(variable, candidate, support);
         double sample = Math.Max(double.Epsilon, this._random.NextDouble());
         weighted.Add(new Weighted_Candidate(candidate, support, -Math.Log(sample) / weight));
       }
       return weighted
-        .OrderByDescending(candidate => candidate.Support)
-        .ThenBy(candidate => candidate.Key)
+        .OrderBy(candidate => candidate.Key)
         .ThenBy(candidate => candidate.Candidate)
         .Select(candidate => candidate.Candidate)
         .ToList();
@@ -1046,13 +1113,12 @@ internal sealed class Experimental_Map_Generation_Solver
       foreach (int candidate in candidates)
       {
         int support = this.partial_candidate_support(variable, candidate);
-        long weight = this.candidate_weight(variable, candidate);
+        double weight = this.selection_weight(variable, candidate, support);
         double sample = Math.Max(double.Epsilon, this._random.NextDouble());
         weighted.Add(new Weighted_Candidate(candidate, support, -Math.Log(sample) / weight));
       }
       return weighted
-        .OrderByDescending(candidate => candidate.Support)
-        .ThenBy(candidate => candidate.Key)
+        .OrderBy(candidate => candidate.Key)
         .ThenBy(candidate => candidate.Candidate)
         .Select(candidate => candidate.Candidate)
         .ToList();
@@ -1108,6 +1174,48 @@ internal sealed class Experimental_Map_Generation_Solver
         }
       }
       return Math.Max(1, weight);
+    }
+
+    private double selection_weight(int variable, int candidate, int support)
+    {
+      double learned = 1.0 + Math.Log(1.0 + this.candidate_weight(variable, candidate));
+      double flexibility = 1.0 + Math.Log(1.0 + support);
+      int local_repetitions = this.local_repetition_count(variable, candidate);
+      double global_penalty = 1.0 + this._candidate_usage_counts[candidate];
+      double local_penalty = 1.0 + local_repetitions * 4.0;
+      return Math.Max(double.Epsilon, learned * flexibility / (global_penalty * local_penalty));
+    }
+
+    private int local_repetition_count(int variable, int candidate)
+    {
+      int repetitions = 0;
+      Cell cell = this._cells[variable];
+      for (int dy = -2; dy <= 2; ++dy)
+      {
+        int max_dx = 2 - Math.Abs(dy);
+        for (int dx = -max_dx; dx <= max_dx; ++dx)
+        {
+          if (dx == 0 && dy == 0)
+            continue;
+          int x = cell.X + dx;
+          int y = cell.Y + dy;
+          if (this._state.is_off_map(x, y))
+            continue;
+          int neighbor_variable = this.variable_at(x, y);
+          if (neighbor_variable >= 0)
+          {
+            if (this._assignments[neighbor_variable] == candidate)
+              ++repetitions;
+          }
+          else if (this._state.Drawn[x, y]
+            && this._model.try_candidate(this._state.Tiles[x, y], out int fixed_candidate)
+            && fixed_candidate == candidate)
+          {
+            ++repetitions;
+          }
+        }
+      }
+      return repetitions;
     }
 
     private void constrain_neighbors(int variable, int candidate)
@@ -1196,7 +1304,10 @@ internal sealed class Experimental_Map_Generation_Solver
         --this._zero_domain_unassigned;
       this._assignments[variable] = assignment;
       if (assignment >= 0)
+      {
+        ++this._candidate_usage_counts[assignment];
         this.refresh_neighbor_priorities(variable);
+      }
     }
 
     private void unassign_variable(int variable)
@@ -1208,7 +1319,10 @@ internal sealed class Experimental_Map_Generation_Solver
       if (this._domain_counts[variable] == 0)
         ++this._zero_domain_unassigned;
       if (old_assignment >= 0)
+      {
+        --this._candidate_usage_counts[old_assignment];
         this.refresh_neighbor_priorities(variable);
+      }
     }
 
     private void refresh_neighbor_priorities(int variable)

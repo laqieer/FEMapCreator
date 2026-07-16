@@ -81,7 +81,8 @@ generation and repair for the current session.
 
 See [`docs/experimental-solver-benchmark.md`](docs/experimental-solver-benchmark.md) and
 `scripts\benchmark-solvers.ps1` for the reproducible legacy/experimental/hybrid matrix
-and default-promotion gates.
+and default-promotion gates. The report includes entropy, dominant-tile share,
+neighbor-repetition metrics, and side-by-side rendered previews for human review.
 
 For large maps, `--algorithm hybrid` runs the legacy solver first, groups its unresolved
 cells into independent regions, and applies the constraint solver only inside adaptive

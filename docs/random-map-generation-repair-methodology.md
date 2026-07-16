@@ -241,7 +241,9 @@ entire remaining global node budget, so unused work carries forward. Initial and
 assignment-triggered AC-3 propagation removes unsupported candidates through cached
 neighbor bitsets; every domain change is reversible through a word-level trail. The
 search chooses a minimum-domain cell and ranks candidates first by least-constraining
-neighbor support, then by learned adjacency weights and a deterministic restart RNG.
+neighbor support, learned adjacency weights, and a deterministic restart RNG. Support
+is a soft factor rather than an absolute ordering; global usage and radius-two local
+repetition penalties prevent highly compatible plain tiles from collapsing the map.
 
 Unresolved is an explicit assignment state, not tile index `0`. The first restart
 performs a short best-partial search; complete restarts use conflict-directed
@@ -496,7 +498,8 @@ All commits occurred on **2026-07-12** within approximately 4 hours[^56].
 ### E1 — Keep legacy as the default
 
 Do not promote another default based on a single focused run. The reproducible harness,
-current matrix, and explicit three-run promotion gates are recorded in
+current matrix, entropy/dominance/repetition gates, human-review previews, and explicit
+three-run promotion gates are recorded in
 [`experimental-solver-benchmark.md`](experimental-solver-benchmark.md).
 
 ### E2 — Bound pathological search
