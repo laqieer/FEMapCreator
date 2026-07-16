@@ -257,6 +257,10 @@ internal sealed class Core_Cli_Executor : ICli_Executor
         request.Experimental_Nogood_Limit ?? spec?.ExperimentalNogoodLimit ?? 4096,
       Experimental_Enable_Conflict_Learning =
         request.Experimental_Enable_Conflict_Learning ?? spec?.ExperimentalEnableConflictLearning ?? true,
+      Experimental_Enable_Branch_Arc_Consistency =
+        request.Experimental_Enable_Branch_Arc_Consistency
+          ?? spec?.ExperimentalEnableBranchArcConsistency
+          ?? false,
       Hybrid_Initial_Halo = request.Hybrid_Initial_Halo ?? spec?.HybridInitialHalo ?? 1,
       Hybrid_Max_Halo = request.Hybrid_Max_Halo ?? spec?.HybridMaxHalo ?? 3,
       Depth = request.Depth ?? spec?.Depth ?? 1,
@@ -339,6 +343,10 @@ internal sealed class Core_Cli_Executor : ICli_Executor
         request.Experimental_Nogood_Limit ?? spec?.ExperimentalNogoodLimit ?? 4096,
       Experimental_Enable_Conflict_Learning =
         request.Experimental_Enable_Conflict_Learning ?? spec?.ExperimentalEnableConflictLearning ?? true,
+      Experimental_Enable_Branch_Arc_Consistency =
+        request.Experimental_Enable_Branch_Arc_Consistency
+          ?? spec?.ExperimentalEnableBranchArcConsistency
+          ?? false,
       Hybrid_Initial_Halo = request.Hybrid_Initial_Halo ?? spec?.HybridInitialHalo ?? 1,
       Hybrid_Max_Halo = request.Hybrid_Max_Halo ?? spec?.HybridMaxHalo ?? 3,
       Radius = request.Repair_Radius ?? spec?.RepairRadius ?? 0,
@@ -424,6 +432,8 @@ internal sealed class Core_Cli_Executor : ICli_Executor
         Experimental_Restart_Count = request.Experimental_Restart_Count,
         Experimental_Nogood_Limit = request.Experimental_Nogood_Limit,
         Experimental_Enable_Conflict_Learning = request.Experimental_Enable_Conflict_Learning,
+        Experimental_Enable_Branch_Arc_Consistency =
+          request.Experimental_Enable_Branch_Arc_Consistency,
         Hybrid_Initial_Halo = request.Hybrid_Initial_Halo,
         Hybrid_Max_Halo = request.Hybrid_Max_Halo,
         Depth = request.Depth,
@@ -508,6 +518,8 @@ internal sealed class Core_Cli_Executor : ICli_Executor
         Experimental_Restart_Count = request.Experimental_Restart_Count,
         Experimental_Nogood_Limit = request.Experimental_Nogood_Limit,
         Experimental_Enable_Conflict_Learning = request.Experimental_Enable_Conflict_Learning,
+        Experimental_Enable_Branch_Arc_Consistency =
+          request.Experimental_Enable_Branch_Arc_Consistency,
         Hybrid_Initial_Halo = request.Hybrid_Initial_Halo,
         Hybrid_Max_Halo = request.Hybrid_Max_Halo,
         Repair_Radius = request.Repair_Radius,

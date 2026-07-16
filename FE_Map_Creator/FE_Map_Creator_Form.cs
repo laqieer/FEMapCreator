@@ -123,6 +123,7 @@ public class FE_Map_Creator_Form : Form
   private ToolStripMenuItem repairMapToolStripMenuItem;
   private ToolStripMenuItem experimentalConstraintSolverToolStripMenuItem;
   private ToolStripMenuItem hybridSolverToolStripMenuItem;
+  private ToolStripMenuItem experimentalBranchArcConsistencyToolStripMenuItem;
   private ToolStripSeparator toolStripMenuItem1;
   private ToolStripMenuItem clearTerrainTagsToolStripMenuItem;
   private ToolStripMenuItem convertMapToTerrainTagsToolStripMenuItem;
@@ -1186,7 +1187,8 @@ public class FE_Map_Creator_Form : Form
     int depth,
     int zoom,
     CancellationToken cancellation_token,
-    Map_Generation_Algorithm algorithm)
+    Map_Generation_Algorithm algorithm,
+    bool enable_branch_arc_consistency)
   {
     Map_Generation_Result result = null;
     Exception operation_error = null;
@@ -1199,7 +1201,8 @@ public class FE_Map_Creator_Form : Form
         new Map_Generation_Options()
         {
           Algorithm = algorithm,
-          Depth = depth
+          Depth = depth,
+          Experimental_Enable_Branch_Arc_Consistency = enable_branch_arc_consistency
         },
         cancellation_token);
       status = $"Map generation complete{algorithm_status_suffix(result.Algorithm)}. Seed: {result.Seed}.";
@@ -1261,7 +1264,8 @@ public class FE_Map_Creator_Form : Form
     int radius,
     int zoom,
     CancellationToken cancellation_token,
-    Map_Generation_Algorithm algorithm)
+    Map_Generation_Algorithm algorithm,
+    bool enable_branch_arc_consistency)
   {
     Map_Generation_Result result = null;
     Exception operation_error = null;
@@ -1275,7 +1279,8 @@ public class FE_Map_Creator_Form : Form
         {
           Algorithm = algorithm,
           Depth = depth,
-          Radius = radius
+          Radius = radius,
+          Experimental_Enable_Branch_Arc_Consistency = enable_branch_arc_consistency
         },
         cancellation_token);
       status = $"Map repair complete{algorithm_status_suffix(result.Algorithm)}. Seed: {result.Seed}.";
@@ -2910,6 +2915,8 @@ label_27:
       int height = (int) this.HeightUpDown.Value;
       int depth = (int) this.DepthUpDown.Value;
       int experimental_zoom = this.Zoom;
+      bool enable_branch_arc_consistency =
+        this.experimentalBranchArcConsistencyToolStripMenuItem.Checked;
       Map_State state = this.create_experimental_generation_state(width, height);
       CancellationToken experimental_cancellation = this.start_map_operation(
         algorithm == Map_Generation_Algorithm.Experimental_Hybrid
@@ -2920,7 +2927,8 @@ label_27:
         depth,
         experimental_zoom,
         experimental_cancellation,
-        algorithm)).Start();
+        algorithm,
+        enable_branch_arc_consistency)).Start();
       return;
     }
     this.Text = string.Format("Map Editor - New Map");
@@ -2992,6 +3000,8 @@ label_27:
     int zoom = this.Zoom;
     if (algorithm != Map_Generation_Algorithm.Legacy)
     {
+      bool enable_branch_arc_consistency =
+        this.experimentalBranchArcConsistencyToolStripMenuItem.Checked;
       Map_State state = algorithm == Map_Generation_Algorithm.Experimental_Hybrid
         ? this.create_hybrid_repair_state()
         : this.create_experimental_repair_state();
@@ -3005,7 +3015,8 @@ label_27:
         radius,
         zoom,
         experimental_cancellation,
-        algorithm)))
+        algorithm,
+        enable_branch_arc_consistency)))
       {
         IsBackground = false
       }.Start();
@@ -3035,12 +3046,21 @@ label_27:
   {
     if (this.experimentalConstraintSolverToolStripMenuItem.Checked)
       this.hybridSolverToolStripMenuItem.Checked = false;
+    this.update_experimental_settings_enabled();
   }
 
   private void hybridSolverToolStripMenuItem_Click(object sender, EventArgs e)
   {
     if (this.hybridSolverToolStripMenuItem.Checked)
       this.experimentalConstraintSolverToolStripMenuItem.Checked = false;
+    this.update_experimental_settings_enabled();
+  }
+
+  private void update_experimental_settings_enabled()
+  {
+    this.experimentalBranchArcConsistencyToolStripMenuItem.Enabled =
+      this.experimentalConstraintSolverToolStripMenuItem.Checked
+        || this.hybridSolverToolStripMenuItem.Checked;
   }
 
   private void CancelOperationButton_Click(object sender, EventArgs e)
@@ -3272,6 +3292,7 @@ label_27:
     this.repairMapToolStripMenuItem = new ToolStripMenuItem();
     this.experimentalConstraintSolverToolStripMenuItem = new ToolStripMenuItem();
     this.hybridSolverToolStripMenuItem = new ToolStripMenuItem();
+    this.experimentalBranchArcConsistencyToolStripMenuItem = new ToolStripMenuItem();
     this.convertMapToTerrainTagsToolStripMenuItem = new ToolStripMenuItem();
     this.copyTerrainTagsImageToolStripMenuItem = new ToolStripMenuItem();
     this.importTerrainTagsFromClipboardImageToolStripMenuItem = new ToolStripMenuItem();
@@ -3663,13 +3684,14 @@ label_27:
     this.clearTerrainTagsToolStripMenuItem.Size = new Size(147, 22);
     this.clearTerrainTagsToolStripMenuItem.Text = "Clear Terrain Tags";
     this.clearTerrainTagsToolStripMenuItem.Click += new EventHandler(this.clearTerrainTagsToolStripMenuItem_Click);
-    this.mapGenerationToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[10]
+    this.mapGenerationToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[11]
     {
       (ToolStripItem) this.prepareTilesetForEditsToolStripMenuItem,
       (ToolStripItem) this.generateMapToolStripMenuItem,
       (ToolStripItem) this.repairMapToolStripMenuItem,
       (ToolStripItem) this.experimentalConstraintSolverToolStripMenuItem,
       (ToolStripItem) this.hybridSolverToolStripMenuItem,
+      (ToolStripItem) this.experimentalBranchArcConsistencyToolStripMenuItem,
       (ToolStripItem) this.convertMapToTerrainTagsToolStripMenuItem,
       (ToolStripItem) this.copyTerrainTagsImageToolStripMenuItem,
       (ToolStripItem) this.importTerrainTagsFromClipboardImageToolStripMenuItem,
@@ -3701,7 +3723,7 @@ label_27:
     this.experimentalConstraintSolverToolStripMenuItem.Name = "experimentalConstraintSolverToolStripMenuItem";
     this.experimentalConstraintSolverToolStripMenuItem.Size = new Size((int) byte.MaxValue, 22);
     this.experimentalConstraintSolverToolStripMenuItem.Text = "Experimental Constraint Solver";
-    this.experimentalConstraintSolverToolStripMenuItem.ToolTipText = "Use the opt-in global backtracking solver for generation and repair.";
+    this.experimentalConstraintSolverToolStripMenuItem.ToolTipText = "Use the whole-map backtracking solver for generation and repair.";
     this.experimentalConstraintSolverToolStripMenuItem.Click += new EventHandler(this.experimentalConstraintSolverToolStripMenuItem_Click);
     this.hybridSolverToolStripMenuItem.CheckOnClick = true;
     this.hybridSolverToolStripMenuItem.Name = "hybridSolverToolStripMenuItem";
@@ -3709,6 +3731,13 @@ label_27:
     this.hybridSolverToolStripMenuItem.Text = "Hybrid Legacy + Constraint Solver";
     this.hybridSolverToolStripMenuItem.ToolTipText = "Run legacy first, then solve only unresolved regions with adaptive halos.";
     this.hybridSolverToolStripMenuItem.Click += new EventHandler(this.hybridSolverToolStripMenuItem_Click);
+    this.experimentalBranchArcConsistencyToolStripMenuItem.CheckOnClick = true;
+    this.experimentalBranchArcConsistencyToolStripMenuItem.Checked = false;
+    this.experimentalBranchArcConsistencyToolStripMenuItem.Enabled = true;
+    this.experimentalBranchArcConsistencyToolStripMenuItem.Name = "experimentalBranchArcConsistencyToolStripMenuItem";
+    this.experimentalBranchArcConsistencyToolStripMenuItem.Size = new Size((int) byte.MaxValue, 22);
+    this.experimentalBranchArcConsistencyToolStripMenuItem.Text = "Experimental Branch Arc Consistency";
+    this.experimentalBranchArcConsistencyToolStripMenuItem.ToolTipText = "Propagate unresolved domains to a fixed point during complete-search branches.";
     this.convertMapToTerrainTagsToolStripMenuItem.Name = "convertMapToTerrainTagsToolStripMenuItem";
     this.convertMapToTerrainTagsToolStripMenuItem.Size = new Size((int) byte.MaxValue, 22);
     this.convertMapToTerrainTagsToolStripMenuItem.Text = "Convert Map to Terrain Tags";

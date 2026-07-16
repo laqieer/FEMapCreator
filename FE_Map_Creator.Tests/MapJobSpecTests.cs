@@ -259,6 +259,40 @@ public sealed class MapJobSpecTests
   }
 
   [TestMethod]
+  public void ReaderLoadsBranchArcConsistencyAndDefaultsToNull()
+  {
+    string directory = create_temp_directory();
+    try
+    {
+      string filename = Path.Combine(directory, "job.json");
+      string omitted_filename = Path.Combine(directory, "omitted.json");
+      File.WriteAllText(filename,
+        """
+        {
+          "version": 1,
+          "experimentalEnableBranchArcConsistency": true
+        }
+        """);
+      File.WriteAllText(omitted_filename,
+        """
+        {
+          "version": 1
+        }
+        """);
+
+      Map_Job_Spec enabled = new Map_Job_Spec_Reader().read_job(filename);
+      Map_Job_Spec omitted = new Map_Job_Spec_Reader().read_job(omitted_filename);
+
+      Assert.IsTrue(enabled.ExperimentalEnableBranchArcConsistency);
+      Assert.IsNull(omitted.ExperimentalEnableBranchArcConsistency);
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [TestMethod]
   public void JobSpecRoundTripPreservesVersionAndOrientation()
   {
     string directory = create_temp_directory();
@@ -278,6 +312,7 @@ public sealed class MapJobSpecTests
         ExperimentalRestartCount = 5,
         ExperimentalNogoodLimit = 64,
         ExperimentalEnableConflictLearning = false,
+        ExperimentalEnableBranchArcConsistency = true,
         HybridInitialHalo = 0,
         HybridMaxHalo = 2,
         Drawn = new bool[][]
@@ -308,6 +343,7 @@ public sealed class MapJobSpecTests
       Assert.AreEqual(5, actual.ExperimentalRestartCount);
       Assert.AreEqual(64, actual.ExperimentalNogoodLimit);
       Assert.IsFalse(actual.ExperimentalEnableConflictLearning);
+      Assert.IsTrue(actual.ExperimentalEnableBranchArcConsistency);
       Assert.AreEqual(0, actual.HybridInitialHalo);
       Assert.AreEqual(2, actual.HybridMaxHalo);
       Assert.IsTrue(actual.Drawn[0][0]);

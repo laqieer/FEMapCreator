@@ -30,6 +30,7 @@ internal sealed class Experimental_Map_Generation_Solver
     int restart_count,
     int nogood_limit,
     bool enable_conflict_learning,
+    bool enable_branch_arc_consistency,
     int seed,
     CancellationToken cancellation_token,
     Tile_Drawn_Callback tile_drawn,
@@ -44,6 +45,7 @@ internal sealed class Experimental_Map_Generation_Solver
       restart_count,
       nogood_limit,
       enable_conflict_learning,
+      enable_branch_arc_consistency,
       seed,
       cancellation_token,
       tile_drawn,
@@ -58,6 +60,7 @@ internal sealed class Experimental_Map_Generation_Solver
     int restart_count,
     int nogood_limit,
     bool enable_conflict_learning,
+    bool enable_branch_arc_consistency,
     int seed,
     CancellationToken cancellation_token,
     Tile_Drawn_Callback tile_drawn,
@@ -74,6 +77,7 @@ internal sealed class Experimental_Map_Generation_Solver
       restart_count,
       nogood_limit,
       enable_conflict_learning,
+      enable_branch_arc_consistency,
       seed,
       cancellation_token,
       tile_drawn,
@@ -88,6 +92,7 @@ internal sealed class Experimental_Map_Generation_Solver
     int restart_count,
     int nogood_limit,
     bool enable_conflict_learning,
+    bool enable_branch_arc_consistency,
     int seed,
     CancellationToken cancellation_token,
     Tile_Drawn_Callback tile_drawn,
@@ -148,6 +153,7 @@ internal sealed class Experimental_Map_Generation_Solver
           mode,
           nogoods,
           enable_conflict_learning,
+          enable_branch_arc_consistency,
           restart_random,
           cancellation_token,
           progress == null || restart > 0 ? null : new Component_Progress(progress, progress_offset));
@@ -187,6 +193,7 @@ internal sealed class Experimental_Map_Generation_Solver
           Search_Mode.Partial,
           nogoods,
           enable_conflict_learning,
+          enable_branch_arc_consistency,
           new Random(derive_seed(seed, component_index, 0)),
           cancellation_token,
           null);
@@ -531,6 +538,7 @@ internal sealed class Experimental_Map_Generation_Solver
     private readonly Search_Mode _mode;
     private readonly Nogood_Cache _nogoods;
     private readonly bool _enable_conflict_learning;
+    private readonly bool _enable_branch_arc_consistency;
     private readonly Random _random;
     private readonly CancellationToken _cancellation_token;
     private readonly IProgress<int> _progress;
@@ -565,6 +573,7 @@ internal sealed class Experimental_Map_Generation_Solver
       Search_Mode mode,
       Nogood_Cache nogoods,
       bool enable_conflict_learning,
+      bool enable_branch_arc_consistency,
       Random random,
       CancellationToken cancellation_token,
       IProgress<int> progress)
@@ -576,6 +585,7 @@ internal sealed class Experimental_Map_Generation_Solver
       this._mode = mode;
       this._nogoods = nogoods ?? throw new ArgumentNullException(nameof(nogoods));
       this._enable_conflict_learning = enable_conflict_learning;
+      this._enable_branch_arc_consistency = enable_branch_arc_consistency;
       this._random = random;
       this._cancellation_token = cancellation_token;
       this._progress = progress;
@@ -840,7 +850,9 @@ internal sealed class Experimental_Map_Generation_Solver
 
     private void search_complete_conflict()
     {
-      Complete_Outcome outcome = this.complete_search();
+      Complete_Outcome outcome = this._enable_branch_arc_consistency
+        ? this.complete_search_propagated(-1)
+        : this.complete_search();
       if (!outcome.Success)
         return;
       this._best_unresolved = 0;
@@ -898,6 +910,86 @@ internal sealed class Experimental_Map_Generation_Solver
 
       this.learn_nogood(key, accumulated_conflict);
       return Complete_Outcome.failure(accumulated_conflict);
+    }
+
+    private Complete_Outcome complete_search_propagated(int changed_variable)
+    {
+      this._cancellation_token.ThrowIfCancellationRequested();
+      if (this._search_node_count >= this._search_node_limit)
+      {
+        this._search_budget_exhausted = true;
+        return Complete_Outcome.budget();
+      }
+      ++this._search_node_count;
+
+      int propagation_mark = this._trail.Count;
+      try
+      {
+        bool consistent = changed_variable < 0
+          ? this.propagate_all_arcs()
+          : this.propagate_from(changed_variable);
+        string key = this.assignment_key();
+        if (!consistent)
+        {
+          // A transitive revision can depend on any ancestor assignment.
+          HashSet<int> conflict = this.assigned_variable_conflict();
+          this.learn_nogood(key, conflict);
+          return Complete_Outcome.failure(conflict);
+        }
+        if (this._enable_conflict_learning && this._nogoods.try_get(key, out int[] cached_conflict))
+        {
+          ++this._nogood_hit_count;
+          return Complete_Outcome.failure(cached_conflict);
+        }
+
+        int variable = this.select_variable();
+        if (variable < 0)
+          return Complete_Outcome.success((int[]) this._assignments.Clone());
+        List<int> candidates = enumerate_candidates(this._domains[variable]);
+        if (candidates.Count == 0)
+        {
+          HashSet<int> conflict = this.assigned_neighbor_conflict(variable);
+          this.learn_nogood(key, conflict);
+          return Complete_Outcome.failure(conflict);
+        }
+
+        HashSet<int> accumulated_conflict = this.assigned_neighbor_conflict(variable);
+        foreach (int candidate in this.ordered_complete_candidates(variable, candidates))
+        {
+          int branch_mark = this._trail.Count;
+          this.assign_variable(variable, candidate);
+          Complete_Outcome child;
+          try
+          {
+            this.restrict_domain_to_candidate(variable, candidate);
+            child = this.complete_search_propagated(variable);
+          }
+          finally
+          {
+            this.undo_to(branch_mark);
+            this.unassign_variable(variable);
+          }
+          if (child.Success || child.Budget_Exhausted)
+            return child;
+          if (this._enable_conflict_learning && !child.Conflict.Contains(variable))
+          {
+            ++this._backjump_count;
+            return child;
+          }
+          foreach (int conflict_variable in child.Conflict)
+          {
+            if (conflict_variable != variable)
+              accumulated_conflict.Add(conflict_variable);
+          }
+        }
+
+        this.learn_nogood(key, accumulated_conflict);
+        return Complete_Outcome.failure(accumulated_conflict);
+      }
+      finally
+      {
+        this.undo_to(propagation_mark);
+      }
     }
 
     private int select_complete_variable(out List<int> selected_candidates)
@@ -1011,6 +1103,17 @@ internal sealed class Experimental_Map_Generation_Solver
         int neighbor_variable = this.variable_at(neighbor.X, neighbor.Y);
         if (neighbor_variable >= 0 && this._assignments[neighbor_variable] >= 0)
           conflict.Add(neighbor_variable);
+      }
+      return conflict;
+    }
+
+    private HashSet<int> assigned_variable_conflict()
+    {
+      HashSet<int> conflict = new HashSet<int>();
+      for (int variable = 0; variable < this._assignments.Length; ++variable)
+      {
+        if (this._assignments[variable] >= 0)
+          conflict.Add(variable);
       }
       return conflict;
     }

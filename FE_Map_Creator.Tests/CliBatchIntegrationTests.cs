@@ -103,6 +103,100 @@ public sealed class CliBatchIntegrationTests
   }
 
   [TestMethod]
+  public async Task BranchArcConsistencySurvivesGenerateAndRepairBatchCloning()
+  {
+    using Cli_Temporary_Directory directory = new Cli_Temporary_Directory();
+    string assets = directory.path("assets");
+    string generation_data =
+      ExperimentalBranchArcConsistencyTestFixture.write_assets(assets);
+    string template = directory.path("template.map");
+    ExperimentalBranchArcConsistencyTestFixture.write_template(template);
+
+    string generate_spec_path = directory.path("generate.json");
+    Map_Job_Spec generate_spec = ExperimentalBranchArcConsistencyTestFixture.create_spec();
+    generate_spec.Operation = "generate";
+    generate_spec.Template = template;
+    generate_spec.AssetsDir = assets;
+    generate_spec.GenerationData = generation_data;
+    generate_spec.ExperimentalEnableBranchArcConsistency = false;
+    generate_spec.Seed = 5;
+    new Map_Job_Spec_Reader().write_job(generate_spec_path, generate_spec);
+    string generate_output = directory.path("generated");
+
+    Cli_Process_Result generated = await Cli_Test_Helpers.run_cli_async(
+      "generate",
+      "--spec", generate_spec_path,
+      "--count", "2",
+      "--output-dir", generate_output,
+      "--format", "map",
+      "--experimental-branch-arc-consistency");
+
+    Cli_Test_Helpers.assert_success(generated);
+    StringAssert.Contains(
+      generated.Standard_Output,
+      "Generation: 2 succeeded, 0 incomplete, 0 failed of 2 job(s).");
+    string[] generated_files = Directory.GetFiles(generate_output, "*.map");
+    Assert.HasCount(2, generated_files);
+    foreach (string output in generated_files)
+    {
+      Map_Document document = new Text_Map_Codec().read(output);
+      Assert.AreEqual(
+        ExperimentalBranchArcConsistencyTestFixture.Good_Root,
+        document.Tiles[0, 1]);
+      Assert.AreEqual(
+        ExperimentalBranchArcConsistencyTestFixture.C0,
+        document.Tiles[2, 2]);
+    }
+
+    string repair_input = directory.path("repair-input");
+    string repair_output = directory.path("repair-output");
+    Directory.CreateDirectory(repair_input);
+    foreach (string name in new[] { "first", "second" })
+    {
+      string input = directory.path("repair-input", $"{name}.map");
+      File.Copy(template, input);
+      Map_Job_Spec sidecar = ExperimentalBranchArcConsistencyTestFixture.create_spec();
+      sidecar.Operation = "repair";
+      sidecar.AssetsDir = assets;
+      sidecar.GenerationData = generation_data;
+      sidecar.ExperimentalEnableBranchArcConsistency = false;
+      sidecar.Seed = 4;
+      new Map_Job_Spec_Reader().write_job(
+        directory.path("repair-input", $"{name}.mapgen.json"),
+        sidecar);
+    }
+
+    Cli_Process_Result repaired = await Cli_Test_Helpers.run_cli_async(
+      "repair",
+      "--input-dir", repair_input,
+      "--output-dir", repair_output,
+      "--pattern", "*.map",
+      "--tileset", ExperimentalBranchArcConsistencyTestFixture.Tileset_Name,
+      "--assets-dir", assets,
+      "--generation-data", generation_data,
+      "--algorithm", "experimental",
+      "--experimental-branch-arc-consistency",
+      "--seed", "4");
+
+    Cli_Test_Helpers.assert_success(repaired);
+    StringAssert.Contains(
+      repaired.Standard_Output,
+      "Repair: 2 succeeded, 0 incomplete, 0 failed of 2 job(s).");
+    string[] repaired_files = Directory.GetFiles(repair_output, "*.map");
+    Assert.HasCount(2, repaired_files);
+    foreach (string output in repaired_files)
+    {
+      Map_Document document = new Text_Map_Codec().read(output);
+      Assert.AreEqual(
+        ExperimentalBranchArcConsistencyTestFixture.Good_Root,
+        document.Tiles[0, 1]);
+      Assert.AreEqual(
+        ExperimentalBranchArcConsistencyTestFixture.C0,
+        document.Tiles[2, 2]);
+    }
+  }
+
+  [TestMethod]
   public async Task GenerateCountRejectsDuplicateOutputCollisionsBeforeWriting()
   {
     using Cli_Temporary_Directory directory = new Cli_Temporary_Directory();

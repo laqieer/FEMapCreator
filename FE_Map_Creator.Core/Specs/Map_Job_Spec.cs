@@ -39,6 +39,8 @@ public sealed class Map_Job_Spec
 
   public bool? ExperimentalEnableConflictLearning { get; set; }
 
+  public bool? ExperimentalEnableBranchArcConsistency { get; set; }
+
   public int? HybridInitialHalo { get; set; }
 
   public int? HybridMaxHalo { get; set; }

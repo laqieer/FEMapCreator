@@ -24,7 +24,7 @@ internal sealed class Repair_Request
 
   /// <summary>
   /// Null when <c>--algorithm</c> was not explicitly typed so a spec-supplied selector
-  /// can still take effect; the executor falls back to legacy.
+  /// can still take effect; the executor falls back to the experimental solver.
   /// </summary>
   internal string Algorithm { get; init; }
 
@@ -35,6 +35,8 @@ internal sealed class Repair_Request
   internal int? Experimental_Nogood_Limit { get; init; }
 
   internal bool? Experimental_Enable_Conflict_Learning { get; init; }
+
+  internal bool? Experimental_Enable_Branch_Arc_Consistency { get; init; }
 
   internal int? Hybrid_Initial_Halo { get; init; }
 

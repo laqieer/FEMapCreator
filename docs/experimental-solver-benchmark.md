@@ -11,6 +11,9 @@ the published CLI surface. Every produced map is checked by `validate` against l
 adjacency and applicable terrain constraints. Repeated runs with identical inputs are
 SHA-256 compared.
 
+The default-off `--experimental-branch-arc-consistency` optimization was added after
+this recorded matrix. These baseline results therefore represent the flag-off path.
+
 ## Reproduce
 
 Focused matrix used for this report:

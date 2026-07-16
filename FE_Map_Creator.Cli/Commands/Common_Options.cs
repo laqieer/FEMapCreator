@@ -92,6 +92,15 @@ internal static class Common_Options
     };
   }
 
+  internal static Option<bool> experimental_branch_arc_consistency()
+  {
+    return new Option<bool>("--experimental-branch-arc-consistency")
+    {
+      Description = "Enable fixed-point arc consistency during experimental complete-search branches.",
+      DefaultValueFactory = _ => false,
+    };
+  }
+
   internal static Option<int> hybrid_initial_halo()
   {
     return new Option<int>("--hybrid-initial-halo")

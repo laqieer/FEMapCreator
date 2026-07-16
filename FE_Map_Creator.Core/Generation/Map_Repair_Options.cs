@@ -24,6 +24,12 @@ public sealed class Map_Repair_Options
 
   public bool Experimental_Enable_Conflict_Learning { get; init; } = true;
 
+  /// <summary>
+  /// Enables fixed-point arc consistency at the root and after each assignment in
+  /// experimental complete-search restarts.
+  /// </summary>
+  public bool Experimental_Enable_Branch_Arc_Consistency { get; init; } = false;
+
   public int Hybrid_Initial_Halo { get; init; } = 1;
 
   public int Hybrid_Max_Halo { get; init; } = 3;

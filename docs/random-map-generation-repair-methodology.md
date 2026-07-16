@@ -10,7 +10,7 @@
 
 ## 2. Executive Summary
 
-FEMapCreator has three corpus-trained modes behind the shared `Map_Generation_Engine`. The **whole-map experimental constraint solver** is the default in Core, CLI, job specs, and WinForms; it decomposes open cells into components, applies AC-3 propagation, uses diversity-aware least-constraining weighted ordering, and combines deterministic best-partial and complete restarts under one global node budget. Complete restarts add conflict-directed backjumping and a bounded exact nogood cache. The **legacy frontier solver** remains explicitly selectable and preserves historical seeded behavior; **hybrid** runs legacy first and regionally improves unresolved cells. All modes operate on `Map_State` (`Tiles`, `Drawn`, `Locked`, and `Terrain`) and support generation and repair. CLI selection uses `--algorithm experimental|legacy|hybrid`; job specs use `"algorithm"`; WinForms starts with **Experimental Constraint Solver** checked. CLI and WinForms report seeds, unresolved counts, progress, restart/search diagnostics, budget exhaustion, and cooperative cancellation.
+FEMapCreator has three corpus-trained modes behind the shared `Map_Generation_Engine`. The **whole-map experimental constraint solver** is the default in Core, CLI, job specs, and WinForms; it decomposes open cells into components, uses reversible word-level domains and fixed-point AC-3 propagation for propagated greedy completion, applies diversity-aware least-constraining weighted ordering, and combines deterministic best-partial and complete restarts under one global node budget. Complete restarts add conflict-directed backjumping and a bounded exact nogood cache. The default-off branch-arc-consistency option applies the same fixed-point propagation at the root and after each complete-search assignment. The **legacy frontier solver** remains explicitly selectable and preserves historical seeded behavior; **hybrid** runs legacy first and regionally improves unresolved cells. All modes operate on `Map_State` (`Tiles`, `Drawn`, `Locked`, and `Terrain`) and support generation and repair. CLI selection uses `--algorithm experimental|legacy|hybrid`; job specs use `"algorithm"`; WinForms starts with **Experimental Constraint Solver** checked. CLI and WinForms report seeds, unresolved counts, progress, restart/search diagnostics, budget exhaustion, and cooperative cancellation.
 
 ---
 
@@ -237,13 +237,20 @@ neighbor bitsets.
 
 `Experimental_Map_Generation_Solver` partitions open cells into cardinal connected
 components and solves easier/lower-domain components first. Each component receives the
-entire remaining global node budget, so unused work carries forward. Initial and
-assignment-triggered AC-3 propagation removes unsupported candidates through cached
-neighbor bitsets; every domain change is reversible through a word-level trail. The
-search chooses a minimum-domain cell and ranks candidates first by least-constraining
-neighbor support, learned adjacency weights, and a deterministic restart RNG. Support
-is a soft factor rather than an absolute ordering; global usage and radius-two local
-repetition penalties prevent highly compatible plain tiles from collapsing the map.
+entire remaining global node budget, so unused work carries forward. Propagated greedy
+completion establishes initial and assignment-triggered fixed-point AC-3 consistency
+through cached neighbor bitsets; every domain change is reversible through a word-level
+trail. Complete backtracking retains its historical immediate
+assigned-neighbor checks unless `Experimental_Enable_Branch_Arc_Consistency` is true
+(`--experimental-branch-arc-consistency`,
+`experimentalEnableBranchArcConsistency`). When enabled, each recursive entry consumes
+one search node before root/branch propagation, while arc revisions remain internal
+work. The search then chooses a minimum-domain cell from the propagated domains and
+retains deterministic weighted candidate ordering. A propagation wipeout conservatively
+attributes conflict to every current assignment before nogood learning/backjumping.
+Support is a soft factor rather than an absolute ordering; global usage and radius-two
+local repetition penalties prevent highly compatible plain tiles from collapsing the
+map.
 
 Unresolved is an explicit assignment state, not tile index `0`. The first restart
 performs a short best-partial search; complete restarts use conflict-directed
@@ -253,8 +260,8 @@ terminates later restarts and is globally optimal. `Map_Generation_Result` expos
 per-component node limits/counts, restart/best-restart data, propagation removals,
 learned/reused nogoods, backjumps, and budget exhaustion. Search runs on cloned arrays,
 only the final assignment is copied to the caller, and cancellation commits nothing.
-The worst case remains exponential, which is why this solver is experimental and never
-selected automatically.
+The worst case remains exponential, so search stays node-bounded and branch arc
+consistency remains default-off.
 
 ### 7.5 Experimental Hybrid Solver
 
@@ -505,7 +512,8 @@ in [`experimental-solver-benchmark.md`](experimental-solver-benchmark.md).
 ### E2 — Bound pathological search
 
 Experimental and hybrid search share explicit node limits, deterministic restart
-budgets, cooperative cancellation, and distinct budget-exhaustion diagnostics.
+budgets, cooperative cancellation, distinct budget-exhaustion diagnostics, and the
+same optional branch-local fixed-point propagation setting.
 
 ### E3 — Preserve side-by-side compatibility coverage
 

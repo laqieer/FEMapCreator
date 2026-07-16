@@ -65,18 +65,23 @@ FE_Map_Creator.Cli.exe generate --width 30 --height 20 --tileset "FE6 - Fields -
 ```
 
 The experimental solver globally backtracks to avoid greedy dead ends. It splits open
-cells into independent components, applies arc-consistency propagation, orders
+cells into independent components, maintains reversible word-level domains, orders
 candidates by remaining neighbor support plus learned corpus weights, and uses
-deterministic partial/complete restarts. Complete restarts use conflict-directed
-backjumping and a bounded exact nogood cache. The defaults are 10,000 total search nodes,
-4 restarts, and 4,096 retained nogoods; tune them with
+deterministic partial/complete restarts. Propagated greedy completion reaches a
+fixed-point arc-consistent state. Complete restarts use conflict-directed backjumping
+and a bounded exact nogood cache; the default-off
+`--experimental-branch-arc-consistency` option also establishes fixed-point arc
+consistency at the root and after every complete-search assignment. The defaults are
+10,000 total search nodes, 4 restarts, and 4,096 retained nogoods; tune them with
 `--experimental-search-node-limit`, `--experimental-restarts`, and
 `--experimental-nogood-limit`. Use `--no-experimental-conflict-learning` for a
 chronological comparison. A zero-unresolved result is optimal; budget exhaustion is
 reported when an incomplete search is cut off. The worst case remains exponential, and
 the solver is cooperatively cancellable. Use `--algorithm legacy` to override the
 default or an experimental job spec. In WinForms, **Map Generation > Experimental
-Constraint Solver** is checked by default and controls both generation and repair.
+Constraint Solver** is checked by default and controls both generation and repair;
+**Experimental Branch Arc Consistency** is an unchecked setting available for the
+experimental and hybrid modes.
 
 See [`docs/experimental-solver-benchmark.md`](docs/experimental-solver-benchmark.md) and
 `scripts\benchmark-solvers.ps1` for the reproducible legacy/experimental/hybrid matrix
@@ -94,6 +99,8 @@ FE_Map_Creator.Cli.exe generate --width 30 --height 20 --tileset "FE6 - Fields -
 
 WinForms exposes mutually exclusive **Experimental Constraint Solver** and
 **Hybrid Legacy + Constraint Solver** menu toggles; experimental is checked by default.
+The separate, unchecked **Experimental Branch Arc Consistency** setting applies to both
+whole-map and hybrid regional complete searches.
 
 Generate from a template plus JSON masks that identify which template cells are initially drawn or locked:
 
@@ -188,6 +195,7 @@ FE_Map_Creator.Cli.exe batch --manifest manifest.json --fail-fast
   "experimentalRestartCount": 4,
   "experimentalNogoodLimit": 4096,
   "experimentalEnableConflictLearning": true,
+  "experimentalEnableBranchArcConsistency": false,
   "hybridInitialHalo": 1,
   "hybridMaxHalo": 3,
   "seed": 42,

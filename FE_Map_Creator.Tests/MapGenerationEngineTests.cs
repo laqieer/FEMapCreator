@@ -782,6 +782,277 @@ public sealed class MapGenerationEngineTests
   }
 
   [TestMethod]
+  public void ExperimentalBranchArcConsistencyDefaultsToExistingDeterministicBaseline()
+  {
+    Assert.IsFalse(
+      new Map_Generation_Options().Experimental_Enable_Branch_Arc_Consistency);
+    Assert.IsFalse(
+      new Map_Repair_Options().Experimental_Enable_Branch_Arc_Consistency);
+    (Map_State omitted_state, Map_Generation_Result omitted) =
+      run_branch_arc_fixture(null, 20, 4);
+    (Map_State false_state, Map_Generation_Result explicit_false) =
+      run_branch_arc_fixture(false, 20, 4);
+    int[] expected_tiles =
+    {
+      67, 999, 999,
+      1, 68, 71,
+      999, 76, 0
+    };
+    bool[] expected_drawn =
+    {
+      true, true, true,
+      true, true, true,
+      true, true, false
+    };
+
+    CollectionAssert.AreEqual(expected_tiles, tiles_row_major(omitted_state));
+    CollectionAssert.AreEqual(expected_tiles, tiles_row_major(false_state));
+    CollectionAssert.AreEqual(expected_drawn, drawn_row_major(omitted_state));
+    CollectionAssert.AreEqual(expected_drawn, drawn_row_major(false_state));
+    Assert.AreEqual(1, omitted.Unresolved_Tile_Count);
+    Assert.AreEqual(20, omitted.Search_Node_Count);
+    Assert.AreEqual(9, omitted.Propagation_Removal_Count);
+    Assert.AreEqual(2, omitted.Search_Restart_Count);
+    Assert.AreEqual(7, omitted.Nogood_Learned_Count);
+    Assert.AreEqual(7, omitted.Nogood_Retained_Count);
+    Assert.AreEqual(0, omitted.Nogood_Hit_Count);
+    Assert.AreEqual(0, omitted.Backjump_Count);
+    Assert.IsTrue(omitted.Search_Budget_Exhausted);
+    Assert.HasCount(1, omitted.Unresolved_Cells);
+    Assert.AreEqual(new Cell(2, 2), omitted.Unresolved_Cells[0]);
+    Assert.HasCount(1, omitted.Components);
+    Assert.AreEqual(0, omitted.Components[0].Best_Restart);
+
+    Assert.AreEqual(omitted.Unresolved_Tile_Count, explicit_false.Unresolved_Tile_Count);
+    Assert.AreEqual(omitted.Search_Node_Count, explicit_false.Search_Node_Count);
+    Assert.AreEqual(omitted.Propagation_Removal_Count, explicit_false.Propagation_Removal_Count);
+    Assert.AreEqual(omitted.Search_Restart_Count, explicit_false.Search_Restart_Count);
+    Assert.AreEqual(omitted.Nogood_Learned_Count, explicit_false.Nogood_Learned_Count);
+    Assert.AreEqual(omitted.Nogood_Retained_Count, explicit_false.Nogood_Retained_Count);
+    Assert.AreEqual(omitted.Nogood_Hit_Count, explicit_false.Nogood_Hit_Count);
+    Assert.AreEqual(omitted.Backjump_Count, explicit_false.Backjump_Count);
+    Assert.AreEqual(omitted.Search_Budget_Exhausted, explicit_false.Search_Budget_Exhausted);
+  }
+
+  [TestMethod]
+  public void ExperimentalBranchArcConsistencyIsDeterministic()
+  {
+    (Map_State first_state, Map_Generation_Result first) =
+      run_branch_arc_fixture(true, 20, 4);
+    (Map_State second_state, Map_Generation_Result second) =
+      run_branch_arc_fixture(true, 20, 4);
+    int[] expected_tiles =
+    {
+      67, 999, 999,
+      66, 70, 71,
+      999, 75, 73
+    };
+
+    CollectionAssert.AreEqual(expected_tiles, tiles_row_major(first_state));
+    CollectionAssert.AreEqual(expected_tiles, tiles_row_major(second_state));
+    CollectionAssert.AreEqual(drawn_row_major(first_state), drawn_row_major(second_state));
+    Assert.IsTrue(first_state.Drawn.Cast<bool>().All(drawn => drawn));
+    Assert.AreEqual(0, first.Unresolved_Tile_Count);
+    Assert.AreEqual(19, first.Search_Node_Count);
+    Assert.AreEqual(23, first.Propagation_Removal_Count);
+    Assert.AreEqual(2, first.Search_Restart_Count);
+    Assert.AreEqual(3, first.Nogood_Learned_Count);
+    Assert.AreEqual(3, first.Nogood_Retained_Count);
+    Assert.AreEqual(0, first.Nogood_Hit_Count);
+    Assert.AreEqual(0, first.Backjump_Count);
+    Assert.IsFalse(first.Search_Budget_Exhausted);
+    Assert.AreEqual(1, first.Components[0].Best_Restart);
+
+    Assert.AreEqual(first.Unresolved_Tile_Count, second.Unresolved_Tile_Count);
+    Assert.AreEqual(first.Search_Node_Count, second.Search_Node_Count);
+    Assert.AreEqual(first.Propagation_Removal_Count, second.Propagation_Removal_Count);
+    Assert.AreEqual(first.Search_Restart_Count, second.Search_Restart_Count);
+    Assert.AreEqual(first.Nogood_Learned_Count, second.Nogood_Learned_Count);
+    Assert.AreEqual(first.Nogood_Retained_Count, second.Nogood_Retained_Count);
+    Assert.AreEqual(first.Nogood_Hit_Count, second.Nogood_Hit_Count);
+    Assert.AreEqual(first.Backjump_Count, second.Backjump_Count);
+    CollectionAssert.AreEqual(
+      first.Unresolved_Cells.Select(cell => (cell.X, cell.Y)).ToArray(),
+      second.Unresolved_Cells.Select(cell => (cell.X, cell.Y)).ToArray());
+  }
+
+  [TestMethod]
+  public void ExperimentalBranchArcConsistencyRestoresMultiwordDomainsAfterMultiHopContradiction()
+  {
+    Tileset_Generation_Data data = ExperimentalBranchArcConsistencyTestFixture.create_data();
+    Map_State state = ExperimentalBranchArcConsistencyTestFixture.create_state();
+
+    Map_Generation_Result result = new Map_Generation_Engine(
+      data,
+      ExperimentalBranchArcConsistencyTestFixture.create_metadata()).generate(
+        state,
+        new Map_Generation_Options()
+        {
+          Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+          Experimental_Search_Node_Limit = 20,
+          Experimental_Restart_Count = 2,
+          Experimental_Nogood_Limit = 64,
+          Experimental_Enable_Branch_Arc_Consistency = true,
+          Seed = 4
+        });
+
+    Assert.HasCount(76, data.generation_data);
+    Assert.AreEqual(
+      ExperimentalBranchArcConsistencyTestFixture.Good_Root,
+      state.Tiles[0, 1],
+      "The candidate at zero-based index 65 was not restored after the failed branch.");
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    Assert.AreEqual(19, result.Search_Node_Count);
+    Assert.AreEqual(23, result.Propagation_Removal_Count);
+    assert_branch_arc_fixture_adjacency(data, state);
+  }
+
+  [TestMethod]
+  public void ExperimentalBranchArcConsistencyHonorsSmallNodeLimits()
+  {
+    foreach ((int limit, int propagation_removals, int restarts) in
+      new[] { (1, 0, 1), (2, 9, 2), (3, 10, 2) })
+    {
+      (Map_State first_state, Map_Generation_Result first) =
+        run_branch_arc_fixture(true, limit, 4);
+      (Map_State second_state, Map_Generation_Result second) =
+        run_branch_arc_fixture(true, limit, 4);
+
+      CollectionAssert.AreEqual(
+        new int[]
+        {
+          67, 999, 999,
+          1, 68, 71,
+          999, 76, 0
+        },
+        tiles_row_major(first_state));
+      CollectionAssert.AreEqual(tiles_row_major(first_state), tiles_row_major(second_state));
+      CollectionAssert.AreEqual(drawn_row_major(first_state), drawn_row_major(second_state));
+      Assert.AreEqual(1, first.Unresolved_Tile_Count);
+      Assert.AreEqual(limit, first.Search_Node_Count);
+      Assert.AreEqual(propagation_removals, first.Propagation_Removal_Count);
+      Assert.AreEqual(restarts, first.Search_Restart_Count);
+      Assert.AreEqual(0, first.Nogood_Learned_Count);
+      Assert.IsTrue(first.Search_Budget_Exhausted);
+      Assert.AreEqual(first.Unresolved_Tile_Count, second.Unresolved_Tile_Count);
+      Assert.AreEqual(first.Search_Node_Count, second.Search_Node_Count);
+      Assert.AreEqual(first.Propagation_Removal_Count, second.Propagation_Removal_Count);
+      Assert.AreEqual(first.Search_Restart_Count, second.Search_Restart_Count);
+      Assert.AreEqual(first.Search_Budget_Exhausted, second.Search_Budget_Exhausted);
+    }
+  }
+
+  [TestMethod]
+  public void ExperimentalRepairPassesBranchArcConsistencyAndPreservesOutsideRadius()
+  {
+    Map_State state = new Map_State(
+      new int[5, 1]
+      {
+        { 1 },
+        { 1 },
+        { 0 },
+        { 1 },
+        { 0 }
+      },
+      new bool[5, 1]
+      {
+        { true },
+        { true },
+        { false },
+        { true },
+        { true }
+      },
+      new bool[5, 1]
+      {
+        { true },
+        { false },
+        { false },
+        { false },
+        { false }
+      },
+      new int[5, 1]);
+
+    Map_Generation_Result result = new Map_Generation_Engine(create_uniform_data(1)).repair(
+      state,
+      new Map_Repair_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Experimental_Enable_Branch_Arc_Consistency = true,
+        Radius = 1,
+        Seed = 32
+      });
+
+    Assert.AreEqual(0, result.Unresolved_Tile_Count);
+    Assert.AreEqual(1, state.Tiles[0, 0]);
+    Assert.IsTrue(state.Drawn[0, 0]);
+    Assert.IsTrue(state.Locked[0, 0]);
+    for (int x = 1; x <= 3; ++x)
+    {
+      Assert.AreEqual(1, state.Tiles[x, 0]);
+      Assert.IsTrue(state.Drawn[x, 0]);
+    }
+    Assert.AreEqual(0, state.Tiles[4, 0]);
+    Assert.IsTrue(state.Drawn[4, 0]);
+  }
+
+  [TestMethod]
+  public void HybridPassesBranchArcConsistencyToRegionalSolves()
+  {
+    Tileset_Generation_Data data = ExperimentalBranchArcConsistencyTestFixture.create_data();
+    Data_Tileset metadata = ExperimentalBranchArcConsistencyTestFixture.create_metadata();
+    Map_State disabled_state = ExperimentalBranchArcConsistencyTestFixture.create_state();
+    Map_State enabled_state = ExperimentalBranchArcConsistencyTestFixture.create_state();
+
+    Map_Generation_Result disabled = new Map_Generation_Engine(data, metadata).generate(
+      disabled_state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Hybrid,
+        Experimental_Search_Node_Limit = 20,
+        Experimental_Restart_Count = 2,
+        Experimental_Nogood_Limit = 64,
+        Experimental_Enable_Branch_Arc_Consistency = false,
+        Hybrid_Initial_Halo = 3,
+        Hybrid_Max_Halo = 3,
+        Seed = 4
+      });
+    Map_Generation_Result enabled = new Map_Generation_Engine(data, metadata).generate(
+      enabled_state,
+      new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Hybrid,
+        Experimental_Search_Node_Limit = 20,
+        Experimental_Restart_Count = 2,
+        Experimental_Nogood_Limit = 64,
+        Experimental_Enable_Branch_Arc_Consistency = true,
+        Hybrid_Initial_Halo = 3,
+        Hybrid_Max_Halo = 3,
+        Seed = 4
+      });
+
+    Assert.AreEqual(1, disabled.Hybrid_Legacy_Unresolved_Tile_Count);
+    Assert.AreEqual(1, disabled.Unresolved_Tile_Count);
+    Assert.AreEqual(20, disabled.Search_Node_Count);
+    Assert.AreEqual(9, disabled.Propagation_Removal_Count);
+    Assert.AreEqual(1, disabled.Hybrid_Attempt_Count);
+    Assert.IsFalse(disabled.Hybrid_Improved);
+    Assert.IsTrue(disabled.Search_Budget_Exhausted);
+
+    Assert.AreEqual(1, enabled.Hybrid_Legacy_Unresolved_Tile_Count);
+    Assert.AreEqual(0, enabled.Unresolved_Tile_Count);
+    Assert.AreEqual(19, enabled.Search_Node_Count);
+    Assert.AreEqual(23, enabled.Propagation_Removal_Count);
+    Assert.AreEqual(1, enabled.Hybrid_Attempt_Count);
+    Assert.AreEqual(3, enabled.Hybrid_Halo);
+    Assert.IsTrue(enabled.Hybrid_Improved);
+    Assert.IsFalse(enabled.Search_Budget_Exhausted);
+    Assert.AreEqual(
+      ExperimentalBranchArcConsistencyTestFixture.Good_Root,
+      enabled_state.Tiles[0, 1]);
+    assert_branch_arc_fixture_adjacency(data, enabled_state);
+  }
+
+  [TestMethod]
   public void ExperimentalComponentProgressIsMonotonic()
   {
     Map_State state = isolated_checkerboard_state(5, 5);
@@ -1552,6 +1823,74 @@ public sealed class MapGenerationEngineTests
         result.Add(state.Tiles[x, y]);
     }
     return result.ToArray();
+  }
+
+  private static bool[] drawn_row_major(Map_State state)
+  {
+    List<bool> result = new List<bool>();
+    for (int y = 0; y < state.Height; ++y)
+    {
+      for (int x = 0; x < state.Width; ++x)
+        result.Add(state.Drawn[x, y]);
+    }
+    return result.ToArray();
+  }
+
+  private static (
+    Map_State State,
+    Map_Generation_Result Result) run_branch_arc_fixture(
+      bool? enable_branch_arc_consistency,
+      int search_node_limit,
+      int seed)
+  {
+    Map_State state = ExperimentalBranchArcConsistencyTestFixture.create_state();
+    Map_Generation_Options options = enable_branch_arc_consistency.HasValue
+      ? new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Experimental_Search_Node_Limit = search_node_limit,
+        Experimental_Restart_Count = 2,
+        Experimental_Nogood_Limit = 64,
+        Experimental_Enable_Branch_Arc_Consistency =
+          enable_branch_arc_consistency.Value,
+        Seed = seed
+      }
+      : new Map_Generation_Options()
+      {
+        Algorithm = Map_Generation_Algorithm.Experimental_Constraint,
+        Experimental_Search_Node_Limit = search_node_limit,
+        Experimental_Restart_Count = 2,
+        Experimental_Nogood_Limit = 64,
+        Seed = seed
+      };
+    Map_Generation_Result result = new Map_Generation_Engine(
+      ExperimentalBranchArcConsistencyTestFixture.create_data(),
+      ExperimentalBranchArcConsistencyTestFixture.create_metadata()).generate(
+        state,
+        options);
+    return (state, result);
+  }
+
+  private static void assert_branch_arc_fixture_adjacency(
+    Tileset_Generation_Data data,
+    Map_State state)
+  {
+    assert_edge(data, (short) state.Tiles[0, 0], 2, (short) state.Tiles[0, 1]);
+    assert_edge(data, (short) state.Tiles[0, 1], 6, (short) state.Tiles[1, 1]);
+    assert_edge(data, (short) state.Tiles[1, 1], 6, (short) state.Tiles[2, 1]);
+    assert_edge(data, (short) state.Tiles[1, 1], 2, (short) state.Tiles[1, 2]);
+    assert_edge(data, (short) state.Tiles[2, 1], 2, (short) state.Tiles[2, 2]);
+    assert_edge(data, (short) state.Tiles[1, 2], 6, (short) state.Tiles[2, 2]);
+  }
+
+  private static void assert_edge(
+    Tileset_Generation_Data data,
+    short source,
+    byte direction,
+    short target)
+  {
+    Assert.IsTrue(data.generation_data[source].Valid_Tile_Priority[direction].ContainsKey(target));
+    Assert.IsTrue(data.generation_data[target].Valid_Tile_Priority[(byte) (10 - direction)].ContainsKey(source));
   }
 
   private static void assert_horizontal_adjacency(Tileset_Generation_Data data, Map_State state)

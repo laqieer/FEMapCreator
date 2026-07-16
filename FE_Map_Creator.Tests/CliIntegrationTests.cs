@@ -18,11 +18,20 @@ public sealed class CliIntegrationTests
     StringAssert.Contains(help.Standard_Output, "validate");
     StringAssert.Contains(help.Standard_Output, "tilesets");
 
+    Cli_Process_Result generate_help = await run_cli_async("generate", "--help");
+    assert_success(generate_help);
+    StringAssert.Contains(
+      generate_help.Standard_Output,
+      "--experimental-branch-arc-consistency");
+
     Cli_Process_Result repair_help = await run_cli_async("repair", "--help");
     assert_success(repair_help);
     StringAssert.Contains(repair_help.Standard_Output, "MAR");
     StringAssert.Contains(repair_help.Standard_Output, "--width");
     StringAssert.Contains(repair_help.Standard_Output, "--algorithm");
+    StringAssert.Contains(
+      repair_help.Standard_Output,
+      "--experimental-branch-arc-consistency");
     StringAssert.Contains(repair_help.Standard_Output, ".mapgen.json");
     string packaged_readme = Path.Combine(Path.GetDirectoryName(cli_dll_path())!, "README.md");
     Assert.IsTrue(File.Exists(packaged_readme), "The CLI output must include its README.");
@@ -142,6 +151,80 @@ public sealed class CliIntegrationTests
     StringAssert.Contains(hybrid.Standard_Output, "using hybrid algorithm");
     StringAssert.Contains(hybrid.Standard_Output, "regional attempt(s)");
     CollectionAssert.AreEqual(File.ReadAllBytes(direct_output), File.ReadAllBytes(spec_output));
+  }
+
+  [TestMethod]
+  public async Task BranchArcConsistencyHonorsCliSpecAndDefaultPrecedence()
+  {
+    using Cli_Temporary_Directory directory = new Cli_Temporary_Directory();
+    string assets = directory.path("assets");
+    string generation_data =
+      ExperimentalBranchArcConsistencyTestFixture.write_assets(assets);
+    string template = directory.path("template.map");
+    ExperimentalBranchArcConsistencyTestFixture.write_template(template);
+
+    string default_spec_path = directory.path("default.json");
+    Map_Job_Spec default_spec = ExperimentalBranchArcConsistencyTestFixture.create_spec();
+    default_spec.Operation = "generate";
+    default_spec.Template = template;
+    default_spec.Output = directory.path("default.map");
+    default_spec.AssetsDir = assets;
+    default_spec.GenerationData = generation_data;
+    default_spec.ExperimentalEnableBranchArcConsistency = null;
+    default_spec.Seed = 4;
+    new Map_Job_Spec_Reader().write_job(default_spec_path, default_spec);
+
+    string direct_spec_path = directory.path("direct.json");
+    Map_Job_Spec direct_spec = ExperimentalBranchArcConsistencyTestFixture.create_spec();
+    direct_spec.Operation = "generate";
+    direct_spec.Template = template;
+    direct_spec.Output = directory.path("direct.map");
+    direct_spec.AssetsDir = assets;
+    direct_spec.GenerationData = generation_data;
+    direct_spec.ExperimentalEnableBranchArcConsistency = false;
+    direct_spec.Seed = 4;
+    new Map_Job_Spec_Reader().write_job(direct_spec_path, direct_spec);
+
+    string enabled_spec_path = directory.path("enabled.json");
+    Map_Job_Spec enabled_spec = ExperimentalBranchArcConsistencyTestFixture.create_spec();
+    enabled_spec.Operation = "generate";
+    enabled_spec.Template = template;
+    enabled_spec.Output = directory.path("enabled.map");
+    enabled_spec.AssetsDir = assets;
+    enabled_spec.GenerationData = generation_data;
+    enabled_spec.ExperimentalEnableBranchArcConsistency = true;
+    enabled_spec.Seed = 4;
+    new Map_Job_Spec_Reader().write_job(enabled_spec_path, enabled_spec);
+
+    Cli_Process_Result default_result =
+      await run_cli_async("generate", "--spec", default_spec_path);
+    Cli_Process_Result direct_result = await run_cli_async(
+      "generate",
+      "--spec", direct_spec_path,
+      "--experimental-branch-arc-consistency");
+    Cli_Process_Result enabled_result =
+      await run_cli_async("generate", "--spec", enabled_spec_path);
+
+    Assert.AreEqual(2, default_result.Exit_Code, default_result.describe());
+    StringAssert.Contains(default_result.Standard_Output, "1 unresolved cell(s)");
+    StringAssert.Contains(default_result.Standard_Output, "20 search node(s)");
+    assert_success(direct_result);
+    assert_success(enabled_result);
+    StringAssert.Contains(direct_result.Standard_Output, "19 search node(s)");
+    StringAssert.Contains(enabled_result.Standard_Output, "19 search node(s)");
+    CollectionAssert.AreEqual(
+      File.ReadAllBytes(direct_spec.Output),
+      File.ReadAllBytes(enabled_spec.Output));
+
+    Map_Document default_map = new Text_Map_Codec().read(default_spec.Output);
+    Map_Document enabled_map = new Text_Map_Codec().read(enabled_spec.Output);
+    Assert.AreEqual(0, default_map.Tiles[2, 2]);
+    Assert.AreEqual(
+      ExperimentalBranchArcConsistencyTestFixture.Good_Root,
+      enabled_map.Tiles[0, 1]);
+    Assert.AreEqual(
+      ExperimentalBranchArcConsistencyTestFixture.C0,
+      enabled_map.Tiles[2, 2]);
   }
 
   [TestMethod]

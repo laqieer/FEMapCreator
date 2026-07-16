@@ -30,6 +30,8 @@ internal static class Repair_Command
     Option<int> experimental_restarts_option = Common_Options.experimental_restarts();
     Option<int> experimental_nogood_limit_option = Common_Options.experimental_nogood_limit();
     Option<bool> no_experimental_conflict_learning_option = Common_Options.no_experimental_conflict_learning();
+    Option<bool> experimental_branch_arc_consistency_option =
+      Common_Options.experimental_branch_arc_consistency();
     Option<int> hybrid_initial_halo_option = Common_Options.hybrid_initial_halo();
     Option<int> hybrid_max_halo_option = Common_Options.hybrid_max_halo();
     Option<string> tileset_option = Common_Options.tileset();
@@ -81,6 +83,7 @@ internal static class Repair_Command
       experimental_restarts_option,
       experimental_nogood_limit_option,
       no_experimental_conflict_learning_option,
+      experimental_branch_arc_consistency_option,
       hybrid_initial_halo_option,
       hybrid_max_halo_option,
       tileset_option,
@@ -175,6 +178,8 @@ internal static class Repair_Command
           Cli_Binding.explicit_value_or_null(parse_result, no_experimental_conflict_learning_option) is bool no_conflict
             ? !no_conflict
             : null,
+        Experimental_Enable_Branch_Arc_Consistency =
+          Cli_Binding.explicit_value_or_null(parse_result, experimental_branch_arc_consistency_option),
         Hybrid_Initial_Halo = Cli_Binding.explicit_value_or_null(parse_result, hybrid_initial_halo_option),
         Hybrid_Max_Halo = Cli_Binding.explicit_value_or_null(parse_result, hybrid_max_halo_option),
         Tileset = parse_result.GetValue(tileset_option),

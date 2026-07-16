@@ -49,6 +49,7 @@ internal sealed class Hybrid_Map_Generation_Solver
       options.Experimental_Restart_Count,
       options.Experimental_Nogood_Limit,
       options.Experimental_Enable_Conflict_Learning,
+      options.Experimental_Enable_Branch_Arc_Consistency,
       options.Hybrid_Initial_Halo,
       options.Hybrid_Max_Halo,
       seed,
@@ -87,6 +88,7 @@ internal sealed class Hybrid_Map_Generation_Solver
       options.Experimental_Restart_Count,
       options.Experimental_Nogood_Limit,
       options.Experimental_Enable_Conflict_Learning,
+      options.Experimental_Enable_Branch_Arc_Consistency,
       options.Hybrid_Initial_Halo,
       options.Hybrid_Max_Halo,
       seed,
@@ -104,6 +106,7 @@ internal sealed class Hybrid_Map_Generation_Solver
     int restart_count,
     int nogood_limit,
     bool enable_conflict_learning,
+    bool enable_branch_arc_consistency,
     int initial_halo,
     int max_halo,
     int seed,
@@ -169,6 +172,7 @@ internal sealed class Hybrid_Map_Generation_Solver
               Experimental_Restart_Count = restart_count,
               Experimental_Nogood_Limit = nogood_limit,
               Experimental_Enable_Conflict_Learning = enable_conflict_learning,
+              Experimental_Enable_Branch_Arc_Consistency = enable_branch_arc_consistency,
               Seed = derive_halo_seed(seed, region_index, halo)
             },
             cancellation_token);
