@@ -91,14 +91,19 @@ public sealed class MapConstraintValidatorTests
       { 2 }
     };
 
-    Map_Validation_Result legacy = Map_Constraint_Validator.validate(tiles, data);
+    Map_Validation_Result legacy = Map_Constraint_Validator.validate(
+      tiles,
+      data,
+      algorithm: Map_Generation_Algorithm.Legacy);
     Map_Validation_Result experimental = Map_Constraint_Validator.validate(
       tiles,
       data,
       algorithm: Map_Generation_Algorithm.Experimental_Constraint);
+    Map_Validation_Result default_result = Map_Constraint_Validator.validate(tiles, data);
 
     Assert.IsTrue(legacy.Is_Valid);
     Assert.IsFalse(experimental.Is_Valid);
+    Assert.IsFalse(default_result.Is_Valid);
   }
 
   private static Tileset_Generation_Data create_data()

@@ -1,7 +1,7 @@
 ﻿# Random Map Generation & Repair Methodology — FEMapCreator
 
 **Repository:** [laqieer/FEMapCreator](https://github.com/laqieer/FEMapCreator)  
-**Implementation snapshot:** Legacy default plus opt-in experimental constraint solver
+**Implementation snapshot:** Experimental constraint solver default with legacy and hybrid alternatives
 
 **Date of analysis:** 2026-07-15
 **Scope:** Entire corpus-training pipeline, generation algorithm, repair pipeline, CLI and WinForms interfaces, determinism guarantees, failure modes, test coverage, and design history.
@@ -10,7 +10,7 @@
 
 ## 2. Executive Summary
 
-FEMapCreator has two corpus-trained map solvers behind the shared `Map_Generation_Engine`. The **legacy frontier solver** remains the default in Core, CLI, job specs, and WinForms; it uses priority-driven expansion plus bounded depth-1/depth-2 lookahead. The opt-in **experimental constraint solver** decomposes open cells into components, applies AC-3 propagation, uses least-constraining weighted candidate ordering, and combines deterministic best-partial and complete restarts under one global node budget. Complete restarts add conflict-directed backjumping and a bounded exact nogood cache. Both operate on `Map_State` (`Tiles`, `Drawn`, `Locked`, and `Terrain`) and support generation and repair. CLI selection uses `--algorithm legacy|experimental`; job specs use `"algorithm"`; WinForms exposes an unchecked **Experimental Constraint Solver** menu item. CLI and WinForms report seeds, unresolved counts, progress, restart/search diagnostics, budget exhaustion, and cooperative cancellation.
+FEMapCreator has three corpus-trained modes behind the shared `Map_Generation_Engine`. The **whole-map experimental constraint solver** is the default in Core, CLI, job specs, and WinForms; it decomposes open cells into components, applies AC-3 propagation, uses diversity-aware least-constraining weighted ordering, and combines deterministic best-partial and complete restarts under one global node budget. Complete restarts add conflict-directed backjumping and a bounded exact nogood cache. The **legacy frontier solver** remains explicitly selectable and preserves historical seeded behavior; **hybrid** runs legacy first and regionally improves unresolved cells. All modes operate on `Map_State` (`Tiles`, `Drawn`, `Locked`, and `Terrain`) and support generation and repair. CLI selection uses `--algorithm experimental|legacy|hybrid`; job specs use `"algorithm"`; WinForms starts with **Experimental Constraint Solver** checked. CLI and WinForms report seeds, unresolved counts, progress, restart/search diagnostics, budget exhaustion, and cooperative cancellation.
 
 ---
 
@@ -229,8 +229,8 @@ The algorithm establishes **forward sequential feasibility**: for each surviving
 
 ### 7.4 Experimental Global Constraint Solver
 
-The experimental path is selected explicitly through
-`Map_Generation_Algorithm.Experimental_Constraint`; legacy remains the default.
+The experimental path is selected by default through
+`Map_Generation_Algorithm.Experimental_Constraint`; legacy remains explicitly available.
 `Experimental_Tile_Model` canonicalizes identical tiles, retains terrain-compatible
 actual aliases, validates positive bidirectional adjacency edges, and precomputes compact
 neighbor bitsets.
@@ -271,7 +271,7 @@ never exceed legacy. Cells outside each accepted region's final halo remain equa
 legacy result. Diagnostics include the legacy unresolved count, accepted maximum halo,
 per-region/per-halo attempts, all attempted components, and total search work. Hybrid is
 selected explicitly through Core, `--algorithm hybrid`, job specs, or the unchecked
-WinForms hybrid menu item; it never changes the default legacy path.
+WinForms hybrid menu item; it does not change the experimental default.
 
 ---
 
@@ -343,7 +343,7 @@ The public-domain splitmix64 finalizer. The `(uint)base_seed` cast means negativ
 | Unresolved count | Always (stdout + exit code) | Warning dialog when nonzero |
 | Cancellation | `CancellationToken` (Ctrl+C) | Cancel button backed by `CancellationTokenSource` |
 | Threading | `Task.Run` (thread pool) | `new Thread(...).Start()` (foreground) |
-| Algorithm | `--algorithm legacy\|experimental` | Unchecked experimental menu toggle |
+| Algorithm | `--algorithm experimental\|legacy\|hybrid` (experimental default) | Experimental checked by default; hybrid/legacy selectable |
 | Depth control | `--depth 1\|2` (default 1) | `DepthUpDown`; legacy generation retains depth 1 |
 | Seed control | `--seed N` or auto | No UI for seed |
 | Output safety | Atomic temp→target move | Direct write, no overwrite protection |
@@ -378,7 +378,7 @@ distinguished from a hole without a sidecar drawn mask.
 
 ### 10.3 Legacy Greedy Dead Ends
 
-The default solver still commits a local choice permanently and marks a later
+The legacy solver still commits a local choice permanently and marks a later
 contradiction unresolved. This behavior is retained for compatibility and stable seeded
 output. The experimental solver exists specifically to backtrack across those choices.
 
@@ -386,7 +386,7 @@ output. The experimental solver exists specifically to backtrack across those ch
 
 The experimental branch-and-bound search has exponential worst-case behavior,
 particularly when proving the minimum unresolved count for a contradictory map. It
-checks cancellation throughout the search and is never enabled by default.
+checks cancellation throughout the search and exposes explicit node/restart limits.
 
 ### 10.5 Different Seeded Layouts by Algorithm
 
@@ -495,12 +495,12 @@ All commits occurred on **2026-07-12** within approximately 4 hours[^56].
 
 ## 13. Experimental Evaluation Priorities
 
-### E1 — Keep legacy as the default
+### E1 — Monitor the experimental default
 
-Do not promote another default based on a single focused run. The reproducible harness,
-current matrix, entropy/dominance/repetition gates, human-review previews, and explicit
-three-run promotion gates are recorded in
-[`experimental-solver-benchmark.md`](experimental-solver-benchmark.md).
+The experimental solver was promoted after human review despite remaining constrained
+terrain benchmark failures. Keep the reproducible matrix,
+entropy/dominance/repetition gates, human-review previews, and rollback criteria current
+in [`experimental-solver-benchmark.md`](experimental-solver-benchmark.md).
 
 ### E2 — Bound pathological search
 
@@ -525,14 +525,14 @@ without changing existing `.map`, `.mar`, or TMX compatibility.
 
 ### Certain (directly verified in source)
 
-- Legacy `run_generation`, bounded `test_valid_tiles`, and repair preprocessing remain the default implementation.
+- Legacy `run_generation`, bounded `test_valid_tiles`, and repair preprocessing remain available for explicit compatibility mode.
 - Experimental model construction, domain intersections, weighted ordering, reversible trail, unresolved branch-and-bound, and transactional publication are implemented in `Experimental_Tile_Model.cs` and `Experimental_Map_Generation_Solver.cs`.
 - `Tile_Data` field types and merge constructor formulas — read from `Tile_Data.cs`[^2][^6].
 - `Map_State` documentation (tile-0 is legitimate) — read from `Map_State.cs`[^40].
 - `Seed_Derivation.derive` splitmix64 code — read from `Seed_Derivation.cs`[^34].
 - Corpus weight formula: first observation → init 1 then +1 = 2 (n+1 rule) — verified from `setup_tileset_data` in `FE_Map_Creator_Form.cs`[^4].
 - `Priority` = 0 after corpus training (default constructor, never written by `setup_tileset_data`) — verified[^3][^13].
-- WinForms reports seeds and unresolved counts and exposes an unchecked experimental solver toggle.
+- WinForms reports seeds and unresolved counts and starts with the experimental solver toggle checked.
 - Commit timeline from git reflog at `C:\FEMapCreator\.git\logs\HEAD`[^56].
 - Core blob SHAs identical at `578b0549` and `ac3c871f` — confirmed via GitHub API[^58].
 

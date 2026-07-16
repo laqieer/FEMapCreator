@@ -51,8 +51,8 @@ internal static class Common_Options
   {
     return new Option<string>("--algorithm")
     {
-      Description = "Map solver to use: legacy (default), experimental, or hybrid.",
-      DefaultValueFactory = _ => "legacy",
+      Description = "Map solver to use: experimental (default), legacy, or hybrid.",
+      DefaultValueFactory = _ => "experimental",
     }.AcceptOnlyFromAmong("legacy", "experimental", "hybrid");
   }
 

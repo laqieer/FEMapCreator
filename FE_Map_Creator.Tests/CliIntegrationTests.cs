@@ -63,6 +63,7 @@ public sealed class CliIntegrationTests
     assert_success(second_result);
     StringAssert.Contains(first_result.Standard_Output, "seed 12345");
     StringAssert.Contains(second_result.Standard_Output, "seed 12345");
+    StringAssert.Contains(first_result.Standard_Output, "using experimental algorithm");
     StringAssert.Contains(first_result.Standard_Error, "Generate progress:");
     Assert.IsFalse(first_result.Standard_Output.Contains("progress:", StringComparison.OrdinalIgnoreCase), first_result.describe());
 

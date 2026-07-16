@@ -627,9 +627,9 @@ function Write-Reports([string[]]$PreviewPaths) {
   $summary.Add("- Hybrid-worse-than-legacy pairs: $($pairedViolations.Count)")
   $summary.Add("- Experimental-worse-than-legacy unresolved pairs: $($experimentalQualityRegressions.Count)")
   $summary.Add("- Diversity regressions/collapses: $($diversityFailures.Count)")
-  $summary.Add("- Default promotion additionally requires three consecutive full-matrix runs on documented hardware, zero correctness failures, zero hybrid regressions, and candidate median unresolved no worse than legacy with worst runtime no more than 2x legacy in every scenario.")
+  $summary.Add("- Retaining the experimental default targets three consecutive full-matrix runs on documented hardware, zero correctness failures, zero regressions, and median unresolved no worse than legacy with worst runtime no more than 2x legacy in every scenario.")
   $summary.Add("")
-  $summary.Add("Legacy remains the default; this run alone does not promote another algorithm.")
+  $summary.Add("Experimental is the current default by product decision; failed gates remain rollback signals.")
   if ($PreviewPaths.Count -gt 0) {
     $summary.Add("")
     $summary.Add("## Human-review previews")

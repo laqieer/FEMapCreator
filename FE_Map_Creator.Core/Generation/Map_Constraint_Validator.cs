@@ -12,7 +12,7 @@ public static class Map_Constraint_Validator
     Tileset_Generation_Data generation_data,
     Data_Tileset terrain_tileset = null,
     int[,] terrain = null,
-    Map_Generation_Algorithm algorithm = Map_Generation_Algorithm.Legacy)
+    Map_Generation_Algorithm algorithm = Map_Generation_Algorithm.Experimental_Constraint)
   {
     if (tiles == null)
       throw new ArgumentNullException(nameof(tiles));

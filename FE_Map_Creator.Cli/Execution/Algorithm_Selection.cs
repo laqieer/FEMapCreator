@@ -10,10 +10,10 @@ internal static class Algorithm_Selection
   {
     string value = Job_Merge.merge_string(cli_value, spec_value);
     if (string.IsNullOrWhiteSpace(value)
-      || string.Equals(value.Trim(), "legacy", StringComparison.OrdinalIgnoreCase))
-      return Map_Generation_Algorithm.Legacy;
-    if (string.Equals(value.Trim(), "experimental", StringComparison.OrdinalIgnoreCase))
+      || string.Equals(value.Trim(), "experimental", StringComparison.OrdinalIgnoreCase))
       return Map_Generation_Algorithm.Experimental_Constraint;
+    if (string.Equals(value.Trim(), "legacy", StringComparison.OrdinalIgnoreCase))
+      return Map_Generation_Algorithm.Legacy;
     if (string.Equals(value.Trim(), "hybrid", StringComparison.OrdinalIgnoreCase))
       return Map_Generation_Algorithm.Experimental_Hybrid;
     throw new InvalidOperationException(

@@ -7,10 +7,10 @@ namespace FE_Map_Creator.Generation;
 public sealed class Map_Generation_Options
 {
   /// <summary>
-  /// Generation implementation to use. The existing frontier algorithm remains the
-  /// default; the constraint solver must be selected explicitly.
+  /// Generation implementation to use. The whole-map constraint solver is the default;
+  /// legacy and hybrid modes remain explicitly selectable.
   /// </summary>
-  public Map_Generation_Algorithm Algorithm { get; init; } = Map_Generation_Algorithm.Legacy;
+  public Map_Generation_Algorithm Algorithm { get; init; } = Map_Generation_Algorithm.Experimental_Constraint;
 
   /// <summary>
   /// Maximum backtracking nodes explored by the experimental constraint solver after it

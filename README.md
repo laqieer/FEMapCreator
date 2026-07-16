@@ -57,11 +57,11 @@ Generate a blank map (every cell open, filled by the generation engine):
 FE_Map_Creator.Cli.exe generate --width 30 --height 20 --tileset "FE6 - Fields - 01020304" --output map.map --seed 12345
 ```
 
-The existing frontier generator remains the default. Opt into the experimental global
-constraint solver with `--algorithm experimental`:
+The whole-map constraint solver is the default for generation and repair. Select the
+historical frontier generator explicitly with `--algorithm legacy`:
 
 ```powershell
-FE_Map_Creator.Cli.exe generate --width 30 --height 20 --tileset "FE6 - Fields - 01020304" --output map.experimental.map --algorithm experimental --depth 2 --seed 12345
+FE_Map_Creator.Cli.exe generate --width 30 --height 20 --tileset "FE6 - Fields - 01020304" --output map.legacy.map --algorithm legacy --depth 2 --seed 12345
 ```
 
 The experimental solver globally backtracks to avoid greedy dead ends. It splits open
@@ -73,11 +73,10 @@ backjumping and a bounded exact nogood cache. The defaults are 10,000 total sear
 `--experimental-search-node-limit`, `--experimental-restarts`, and
 `--experimental-nogood-limit`. Use `--no-experimental-conflict-learning` for a
 chronological comparison. A zero-unresolved result is optimal; budget exhaustion is
-reported when an incomplete search is cut off. The worst case remains exponential, so
-the solver stays opt-in and cancellable. Use
-`--algorithm legacy` explicitly to override an experimental job spec. In WinForms, the
-unchecked **Map Generation > Experimental Constraint Solver** menu item controls both
-generation and repair for the current session.
+reported when an incomplete search is cut off. The worst case remains exponential, and
+the solver is cooperatively cancellable. Use `--algorithm legacy` to override the
+default or an experimental job spec. In WinForms, **Map Generation > Experimental
+Constraint Solver** is checked by default and controls both generation and repair.
 
 See [`docs/experimental-solver-benchmark.md`](docs/experimental-solver-benchmark.md) and
 `scripts\benchmark-solvers.ps1` for the reproducible legacy/experimental/hybrid matrix
@@ -94,7 +93,7 @@ FE_Map_Creator.Cli.exe generate --width 30 --height 20 --tileset "FE6 - Fields -
 ```
 
 WinForms exposes mutually exclusive **Experimental Constraint Solver** and
-**Hybrid Legacy + Constraint Solver** menu toggles; both are unchecked by default.
+**Hybrid Legacy + Constraint Solver** menu toggles; experimental is checked by default.
 
 Generate from a template plus JSON masks that identify which template cells are initially drawn or locked:
 
@@ -212,7 +211,7 @@ FE_Map_Creator.Cli.exe batch --manifest manifest.json --fail-fast
 }
 ```
 
-Here `template.map`'s border tiles are fixed by `locked` (also implicitly `drawn`, since with a template and no explicit spec `drawn` matrix, `drawn` defaults to the `locked` mask), the top-left interior block requires terrain tag `3`, the bottom-right interior block forbids terrain tag `5`, and every other interior cell is left open for the experimental solver to fill. Omit `algorithm` or set it to `legacy` to retain the default frontier algorithm.
+Here `template.map`'s border tiles are fixed by `locked` (also implicitly `drawn`, since with a template and no explicit spec `drawn` matrix, `drawn` defaults to the `locked` mask), the top-left interior block requires terrain tag `3`, the bottom-right interior block forbids terrain tag `5`, and every other interior cell is left open for the experimental solver to fill. Omit `algorithm` to use the experimental default, or set it to `legacy` for the frontier algorithm.
 
 A single-job MAR repair spec supplies the same non-inferable metadata:
 

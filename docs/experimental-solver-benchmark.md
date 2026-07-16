@@ -137,18 +137,19 @@ Red checkerboard tiles in legacy/hybrid are serialized unresolved tile-zero cell
 ## Conclusion
 
 The whole-map experimental solver is now visually diverse on blank and disconnected
-maps as well as complete in every such benchmark case. It is the strongest opt-in
-choice for those scenarios. Hybrid remains a safe unresolved-count fallback, but its
-divided budget leaves more large and constrained maps incomplete.
+maps as well as complete in every such benchmark case. It is the strongest choice for
+those scenarios and becomes the default in v1.3.0 after human review. Hybrid remains a
+safe unresolved-count fallback, but its divided budget leaves more large and constrained
+maps incomplete.
 
-Legacy remains the default. Experimental still fails unresolved-count, local/terrain
-diversity, runtime, and budget gates, and this report covers only one focused matrix
-rather than three consecutive full matrices. Promotion should be reconsidered only
-after all completion and visual-quality gates pass.
+The promotion is an explicit product decision rather than a claim that every automated
+gate passed. Experimental still fails unresolved-count, local/terrain diversity,
+runtime, and budget gates in constrained cases. Legacy remains available through
+`--algorithm legacy` and the WinForms menu as the rollback/compatibility mode.
 
-## Default-promotion criteria
+## Default acceptance and rollback criteria
 
-Changing the default away from legacy requires all of the following:
+The following remain the target acceptance gates for retaining the experimental default:
 
 1. Three consecutive **full** matrix runs on documented hardware.
 2. Zero validation and determinism failures.
@@ -160,9 +161,9 @@ Changing the default away from legacy requires all of the following:
 8. Release build and full automated tests remain green.
 
 This report is one focused matrix, not three consecutive full matrices. The whole-map
-experimental solver also exceeds the 2x worst-runtime gate and exhausts its budget in
-some terrain cases. Hybrid does not meet the runtime or budget-exhaustion gates either.
-Legacy therefore remains the default.
+experimental solver exceeds the 2x worst-runtime gate and exhausts its budget in some
+terrain cases. Continue publishing these metrics; regressions in correctness,
+determinism, blank-map diversity, or cancellation should trigger a rollback to legacy.
 
 ## Limitations
 

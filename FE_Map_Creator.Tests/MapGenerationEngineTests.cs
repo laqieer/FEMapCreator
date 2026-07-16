@@ -20,6 +20,7 @@ public sealed class MapGenerationEngineTests
 
     Assert.AreEqual(0, result.Unresolved_Tile_Count);
     Assert.AreEqual(1234, result.Seed);
+    Assert.AreEqual(Map_Generation_Algorithm.Experimental_Constraint, result.Algorithm);
     assert_all_tiles(state, 1);
   }
 
@@ -33,6 +34,7 @@ public sealed class MapGenerationEngineTests
       state,
       new Map_Generation_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Seed = 1234
       },
       progress: progress);
@@ -68,6 +70,7 @@ public sealed class MapGenerationEngineTests
 
     new Map_Generation_Engine(create_connected_data(1, 2)).generate(state, new Map_Generation_Options()
     {
+      Algorithm = Map_Generation_Algorithm.Legacy,
       Depth = 1,
       Seed = 42
     });
@@ -91,6 +94,7 @@ public sealed class MapGenerationEngineTests
 
     new Map_Generation_Engine(create_alias_data()).generate(state, new Map_Generation_Options()
     {
+      Algorithm = Map_Generation_Algorithm.Legacy,
       Depth = 1,
       Seed = 77
     });
@@ -180,6 +184,7 @@ public sealed class MapGenerationEngineTests
       state,
       new Map_Generation_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Seed = 42
       });
 
@@ -285,6 +290,7 @@ public sealed class MapGenerationEngineTests
       state,
       new Map_Repair_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Radius = 1,
         Depth = 1,
         Seed = 9
@@ -325,6 +331,7 @@ public sealed class MapGenerationEngineTests
       state,
       new Map_Repair_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Radius = 0,
         Depth = 1,
         Seed = 15
@@ -361,6 +368,7 @@ public sealed class MapGenerationEngineTests
       state,
       new Map_Repair_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Radius = 1,
         Depth = 1,
         Seed = 16
@@ -387,6 +395,7 @@ public sealed class MapGenerationEngineTests
       state,
       new Map_Generation_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Seed = 12
       },
       progress: progress);
@@ -414,6 +423,7 @@ public sealed class MapGenerationEngineTests
       state,
       new Map_Generation_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Seed = 13
       });
 
@@ -435,6 +445,7 @@ public sealed class MapGenerationEngineTests
       state,
       new Map_Generation_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Seed = 1
       });
 
@@ -456,6 +467,7 @@ public sealed class MapGenerationEngineTests
       state,
       new Map_Generation_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Seed = 10
       });
 
@@ -476,6 +488,7 @@ public sealed class MapGenerationEngineTests
       depth_one,
       new Map_Generation_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Depth = 1,
         Seed = 0
       });
@@ -483,6 +496,7 @@ public sealed class MapGenerationEngineTests
       depth_two,
       new Map_Generation_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Depth = 2,
         Seed = 0
       });
@@ -916,6 +930,7 @@ public sealed class MapGenerationEngineTests
       legacy_state,
       new Map_Generation_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Depth = 1,
         Seed = 0
       });
@@ -958,6 +973,7 @@ public sealed class MapGenerationEngineTests
       legacy_state,
       new Map_Generation_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Depth = 1,
         Seed = 2
       });
@@ -996,6 +1012,7 @@ public sealed class MapGenerationEngineTests
       legacy_state,
       new Map_Generation_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Depth = 1,
         Seed = 3
       });
@@ -1117,6 +1134,7 @@ public sealed class MapGenerationEngineTests
       legacy_state,
       new Map_Repair_Options()
       {
+        Algorithm = Map_Generation_Algorithm.Legacy,
         Radius = 1,
         Seed = 6
       });

@@ -3697,6 +3697,7 @@ label_27:
     this.repairMapToolStripMenuItem.Text = "Repair Map";
     this.repairMapToolStripMenuItem.Click += new EventHandler(this.repairMapToolStripMenuItem_Click);
     this.experimentalConstraintSolverToolStripMenuItem.CheckOnClick = true;
+    this.experimentalConstraintSolverToolStripMenuItem.Checked = true;
     this.experimentalConstraintSolverToolStripMenuItem.Name = "experimentalConstraintSolverToolStripMenuItem";
     this.experimentalConstraintSolverToolStripMenuItem.Size = new Size((int) byte.MaxValue, 22);
     this.experimentalConstraintSolverToolStripMenuItem.Text = "Experimental Constraint Solver";
