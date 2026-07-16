@@ -83,9 +83,10 @@ Constraint Solver** is checked by default and controls both generation and repai
 **Experimental Branch Arc Consistency** is an unchecked setting available for the
 experimental and hybrid modes.
 
-See [`docs/experimental-solver-benchmark.md`](docs/experimental-solver-benchmark.md) and
-`scripts\benchmark-solvers.ps1` for the reproducible legacy/experimental/hybrid matrix
-and default-promotion gates. The report includes entropy, dominant-tile share,
+See [`docs/experimental-solver-benchmark.md`](docs/experimental-solver-benchmark.md),
+[`docs/branch-arc-consistency-benchmark.md`](docs/branch-arc-consistency-benchmark.md),
+and `scripts\benchmark-solvers.ps1` for the reproducible solver matrices and
+default-promotion gates. The reports include entropy, dominant-tile share,
 neighbor-repetition metrics, and side-by-side rendered previews for human review.
 
 For large maps, `--algorithm hybrid` runs the legacy solver first, groups its unresolved
