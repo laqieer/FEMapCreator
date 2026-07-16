@@ -85,6 +85,19 @@ and 20 of 24 constrained-terrain runs. Hybrid improved or matched legacy in ever
 but remained incomplete on larger blank, disconnected, and terrain-constrained cases
 because its budget is divided across regional attempts.
 
+## Conclusion
+
+The whole-map experimental solver is the strongest opt-in choice for map quality: it
+resolved every blank, disconnected, and repair case and most constrained-terrain cases,
+with no validation or determinism failures. Hybrid is a safe regional fallback because
+it never produced more unresolved cells than legacy, but its divided budget left more
+large and constrained maps incomplete.
+
+Legacy remains the default. The experimental solver exceeded the 2x worst-runtime limit
+and exhausted its node budget in four terrain runs, while this report covers only one
+focused matrix rather than the required three consecutive full matrices. Promotion
+should be reconsidered only after those runtime, budget, and repetition gates pass.
+
 ## Default-promotion criteria
 
 Changing the default away from legacy requires all of the following:
