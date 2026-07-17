@@ -284,6 +284,42 @@ public sealed class MapCodecTests
   }
 
   [TestMethod]
+  [DataRow(Map_Format.Text)]
+  [DataRow(Map_Format.Mar)]
+  [DataRow(Map_Format.Tmx)]
+  public async Task RegistryAsyncReadSupportsAsyncOnlyStreams(Map_Format format)
+  {
+    Map_Document expected = format == Map_Format.Mar
+      ? mar_sample_document()
+      : text_sample_document();
+    expected.Tileset_Image_Source = "tiles.png";
+    Map_Write_Options write_options = new Map_Write_Options()
+    {
+      Tileset = expected.Tileset,
+      Tileset_Image_Source = expected.Tileset_Image_Source
+    };
+    Map_Codec_Registry registry = new Map_Codec_Registry();
+    using MemoryStream serialized = new MemoryStream();
+    registry.write(serialized, format, expected, write_options);
+    using Async_Only_Read_Stream input = new Async_Only_Read_Stream(serialized.ToArray());
+    Map_Read_Options? read_options = format == Map_Format.Mar
+      ? new Map_Read_Options()
+      {
+        Width = expected.Width,
+        Height = expected.Height,
+        Tileset = expected.Tileset
+      }
+      : null;
+
+    Map_Document actual = await registry.read_async(input, format, read_options);
+
+    Assert.IsTrue(input.CanRead);
+    assert_document(expected, actual);
+    if (format == Map_Format.Tmx)
+      Assert.AreEqual(expected.Tileset_Image_Source, actual.Tileset_Image_Source);
+  }
+
+  [TestMethod]
   public void TmxReaderDecodesCsvWithOffsetsAndEmptyGids()
   {
     string directory = create_temp_directory();
@@ -643,6 +679,74 @@ public sealed class MapCodecTests
       CancellationToken cancellationToken = default)
     {
       return this.Buffer.WriteAsync(buffer, cancellationToken);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+      if (disposing)
+        this.Buffer.Dispose();
+      base.Dispose(disposing);
+    }
+  }
+
+  private sealed class Async_Only_Read_Stream : Stream
+  {
+    private readonly MemoryStream Buffer;
+
+    internal Async_Only_Read_Stream(byte[] buffer)
+    {
+      this.Buffer = new MemoryStream(buffer, writable: false);
+    }
+
+    public override bool CanRead => this.Buffer.CanRead;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => this.Buffer.Length;
+
+    public override long Position
+    {
+      get => this.Buffer.Position;
+      set => throw new NotSupportedException();
+    }
+
+    public override void Flush()
+    {
+    }
+
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+      throw new InvalidOperationException("Browser supports only ReadAsync.");
+    }
+
+    public override Task<int> ReadAsync(
+      byte[] buffer,
+      int offset,
+      int count,
+      CancellationToken cancellationToken)
+    {
+      return this.Buffer.ReadAsync(buffer, offset, count, cancellationToken);
+    }
+
+    public override ValueTask<int> ReadAsync(
+      Memory<byte> buffer,
+      CancellationToken cancellationToken = default)
+    {
+      return this.Buffer.ReadAsync(buffer, cancellationToken);
+    }
+
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+      throw new NotSupportedException();
+    }
+
+    public override void SetLength(long value)
+    {
+      throw new NotSupportedException();
+    }
+
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+      throw new NotSupportedException();
     }
 
     protected override void Dispose(bool disposing)

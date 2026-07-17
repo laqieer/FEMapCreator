@@ -378,8 +378,8 @@ public partial class MainView : UserControl
         }
         : null;
       Map_Document document;
-      using (Stream stream = await file.OpenReadAsync())
-        document = registry.read(stream, format, options);
+      await using (Stream stream = await file.OpenReadAsync())
+        document = await registry.read_async(stream, format, options);
 
       if (format != Map_Format.Mar)
       {
