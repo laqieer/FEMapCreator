@@ -249,6 +249,41 @@ public sealed class MapCodecTests
   }
 
   [TestMethod]
+  [DataRow(Map_Format.Text)]
+  [DataRow(Map_Format.Mar)]
+  [DataRow(Map_Format.Tmx)]
+  public async Task RegistryAsyncWriteSupportsAsyncOnlyStreams(Map_Format format)
+  {
+    Map_Document expected = text_sample_document();
+    expected.Tileset_Image_Source = "tiles.png";
+    Map_Write_Options write_options = new Map_Write_Options()
+    {
+      Tileset = expected.Tileset,
+      Tileset_Image_Source = expected.Tileset_Image_Source
+    };
+    Map_Codec_Registry registry = new Map_Codec_Registry();
+    using Async_Only_Write_Stream output = new Async_Only_Write_Stream();
+
+    await registry.write_async(output, format, expected, write_options);
+    await output.FlushAsync();
+
+    Assert.IsTrue(output.CanWrite);
+    using MemoryStream input = new MemoryStream(output.to_array());
+    Map_Read_Options? read_options = format == Map_Format.Mar
+      ? new Map_Read_Options()
+      {
+        Width = expected.Width,
+        Height = expected.Height,
+        Tileset = expected.Tileset
+      }
+      : null;
+    Map_Document actual = registry.read(input, format, read_options);
+    assert_document(expected, actual);
+    if (format == Map_Format.Tmx)
+      Assert.AreEqual(expected.Tileset_Image_Source, actual.Tileset_Image_Source);
+  }
+
+  [TestMethod]
   public void TmxReaderDecodesCsvWithOffsetsAndEmptyGids()
   {
     string directory = create_temp_directory();
@@ -545,5 +580,76 @@ public sealed class MapCodecTests
     string directory = Path.Combine(Path.GetTempPath(), $"FEMapCreator-{Guid.NewGuid():N}");
     Directory.CreateDirectory(directory);
     return directory;
+  }
+
+  private sealed class Async_Only_Write_Stream : Stream
+  {
+    private readonly MemoryStream Buffer = new MemoryStream();
+
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => this.Buffer.CanWrite;
+    public override long Length => throw new NotSupportedException();
+
+    public override long Position
+    {
+      get => throw new NotSupportedException();
+      set => throw new NotSupportedException();
+    }
+
+    public byte[] to_array() => this.Buffer.ToArray();
+
+    public override void Flush()
+    {
+      throw new NotSupportedException("Synchronous flush is not supported.");
+    }
+
+    public override Task FlushAsync(CancellationToken cancellationToken)
+    {
+      return this.Buffer.FlushAsync(cancellationToken);
+    }
+
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+      throw new NotSupportedException();
+    }
+
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+      throw new NotSupportedException();
+    }
+
+    public override void SetLength(long value)
+    {
+      throw new NotSupportedException();
+    }
+
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+      throw new InvalidOperationException("Browser supports only WriteAsync.");
+    }
+
+    public override Task WriteAsync(
+      byte[] buffer,
+      int offset,
+      int count,
+      CancellationToken cancellationToken)
+    {
+      return this.Buffer.WriteAsync(buffer, offset, count, cancellationToken);
+    }
+
+    public override ValueTask WriteAsync(
+      ReadOnlyMemory<byte> buffer,
+      CancellationToken cancellationToken = default)
+    {
+      return this.Buffer.WriteAsync(buffer, cancellationToken);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+      if (disposing)
+        this.Buffer.Dispose();
+      base.Dispose(disposing);
+    }
   }
 }

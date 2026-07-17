@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 
 #nullable disable
 namespace FE_Map_Creator;
@@ -74,5 +75,22 @@ public sealed class Map_Codec_Registry
     if (stream == null)
       throw new ArgumentNullException(nameof (stream));
     this.codec(format).write(stream, document, options);
+  }
+
+  public async Task write_async(
+    Stream stream,
+    Map_Format format,
+    Map_Document document,
+    Map_Write_Options options = null)
+  {
+    if (stream == null)
+      throw new ArgumentNullException(nameof (stream));
+    if (!stream.CanWrite)
+      throw new ArgumentException("The map stream must be writable.", nameof (stream));
+    using (MemoryStream buffer = new MemoryStream())
+    {
+      this.codec(format).write(buffer, document, options);
+      await stream.WriteAsync(buffer.GetBuffer(), 0, checked((int) buffer.Length));
+    }
   }
 }

@@ -10,6 +10,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices.JavaScript;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -465,11 +466,11 @@ public partial class MainView : UserControl
         Tileset = tileset_name,
         Tileset_Image_Source = image_source,
       };
-      using (Stream stream = await file.OpenWriteAsync())
+      await using (Stream stream = await file.OpenWriteAsync())
       {
         if (stream.CanSeek)
           stream.SetLength(0);
-        registry.write(stream, format, document, options);
+        await registry.write_async(stream, format, document, options);
         await stream.FlushAsync();
       }
       this._current_file = file;
@@ -792,7 +793,8 @@ public partial class MainView : UserControl
       exception is NotSupportedException ||
       exception is UnauthorizedAccessException ||
       exception is ArgumentException ||
-      exception is FormatException;
+      exception is FormatException ||
+      (OperatingSystem.IsBrowser() && exception is JSException);
   }
 
   private sealed class Choice<T>
