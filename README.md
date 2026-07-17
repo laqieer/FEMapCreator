@@ -51,9 +51,9 @@ dotnet publish .\FE_Map_Creator.Gui.Browser\FE_Map_Creator.Gui.Browser.csproj -c
 .\scripts\smoke-test-web.ps1 -PublishDirectory .\FE_Map_Creator.Gui.Browser\bin\Release\net10.0-browser\publish
 ```
 
-The static site is under the publish directory's `wwwroot\`. Pushes to `main` deploy it to GitHub Pages. Version tags publish self-contained Windows x64, Linux x64, macOS x64, macOS arm64, and Web archives to GitHub Releases.
+The static site is under the publish directory's `wwwroot\`. Pushes to `main` deploy it to GitHub Pages. Version tags publish self-contained Windows x64, Linux x64, macOS x64, macOS arm64, and Web archives to GitHub Releases. Each desktop archive includes the matching self-contained CLI under `CLI\`.
 
-Pull requests, pushes to `main`, and manually dispatched CI runs also produce downloadable Windows x64, Linux x64, macOS x64, macOS arm64, and validated Web `wwwroot` archives. Open the relevant run under **Actions > CI**, then download the package from its **Artifacts** section. Artifact names include the platform/RID, commit SHA, run number, and run attempt.
+Pull requests, pushes to `main`, and manually dispatched CI runs also produce downloadable Windows x64, Linux x64, macOS x64, macOS arm64, and validated Web `wwwroot` archives. Desktop CI archives include the CLI under `CLI\`. Open the relevant run under **Actions > CI**, then download the package from its **Artifacts** section. Artifact names include the platform/RID, commit SHA, run number, and run attempt.
 
 CI artifacts are short-lived, unsigned, non-release builds intended for testing. They are not GitHub Releases; use the [latest release](https://github.com/laqieer/FEMapCreator/releases/latest) for supported downloads.
 

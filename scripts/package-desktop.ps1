@@ -16,6 +16,7 @@ param(
 $ErrorActionPreference = "Stop"
 $repository_root = Split-Path $PSScriptRoot -Parent
 $project = Join-Path $repository_root "FE_Map_Creator.Gui.Desktop/FE_Map_Creator.Gui.Desktop.csproj"
+$cli_project = Join-Path $repository_root "FE_Map_Creator.Cli/FE_Map_Creator.Cli.csproj"
 $readme = Join-Path $repository_root "README.md"
 $output_directory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
 $archive_path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArchivePath)
@@ -90,6 +91,28 @@ if ($Rid.StartsWith("osx-", [StringComparison]::Ordinal))
   New-Item $publish_directory -ItemType Directory -Force | Out-Null
   Move-Item $app $publish_directory
   Copy-Item $readme (Join-Path $publish_directory "README.md")
+}
+
+$cli_directory = Join-Path $publish_directory "CLI"
+& dotnet publish $cli_project `
+  -c Release `
+  -r $Rid `
+  --self-contained true `
+  -p:DebugType=None `
+  -p:DebugSymbols=false `
+  -o $cli_directory
+if ($LASTEXITCODE -ne 0)
+{
+  throw "CLI publish failed for $Rid."
+}
+$cli_executable_name = "FE_Map_Creator.Cli"
+if ($Rid.StartsWith("win-", [StringComparison]::Ordinal))
+{
+  $cli_executable_name += ".exe"
+}
+if (-not (Test-Path (Join-Path $cli_directory $cli_executable_name) -PathType Leaf))
+{
+  throw "CLI executable was not published for ${Rid}: $cli_executable_name"
 }
 
 if ($archive_path.EndsWith(".zip", [StringComparison]::OrdinalIgnoreCase))
