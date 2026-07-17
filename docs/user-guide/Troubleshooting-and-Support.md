@@ -45,4 +45,3 @@ Do not upload ROMs, executables, secrets, or copyrighted/sensitive archives.
 - [Q&A](https://github.com/laqieer/FEMapCreator/discussions/categories/q-a) for help.
 - [Ideas](https://github.com/laqieer/FEMapCreator/discussions/categories/ideas) for feature proposals.
 - [Show and tell](https://github.com/laqieer/FEMapCreator/discussions/categories/show-and-tell) for workflows, generated maps, feedback, and outcomes.
-
