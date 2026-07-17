@@ -11,37 +11,57 @@ permissions:
   contents: read
 
 jobs:
-  windows-solution:
-    name: Windows solution
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10.0.x
-      - name: Install WebAssembly tools
-        run: dotnet workload install wasm-tools --skip-manifest-update
-      - name: Test complete solution
-        run: dotnet test .\FE_Map_Creator\FE_Map_Creator.sln -c Release
-
-  desktop-cross-platform:
-    name: Desktop (${{ matrix.os }})
+  desktop:
+    name: Desktop (${{ matrix.asset }}, ${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
+        include:
+          - os: windows-latest
+            rid: win-x64
+            asset: FE-Map-Creator-Windows-x64
+            extension: zip
+          - os: ubuntu-latest
+            rid: linux-x64
+            asset: FE-Map-Creator-Linux-x64
+            extension: tar.gz
+          - os: macos-latest
+            rid: osx-x64
+            asset: FE-Map-Creator-macOS-x64
+            extension: tar.gz
+          - os: macos-latest
+            rid: osx-arm64
+            asset: FE-Map-Creator-macOS-arm64
+            extension: tar.gz
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
-      - name: Build desktop GUI
-        run: dotnet build ./FE_Map_Creator.Gui.Desktop/FE_Map_Creator.Gui.Desktop.csproj -c Release
+      - name: Install WebAssembly tools for complete tests
+        if: matrix.rid == 'win-x64'
+        run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Test complete solution
+        if: matrix.rid == 'win-x64'
+        run: dotnet test .\FE_Map_Creator\FE_Map_Creator.sln -c Release
       - name: Test shared GUI
+        if: matrix.rid == 'linux-x64' || matrix.rid == 'osx-x64'
         run: dotnet test ./FE_Map_Creator.Gui.Tests/FE_Map_Creator.Gui.Tests.csproj -c Release
+      - name: Package desktop GUI
+        shell: pwsh
+        run: >
+          ./scripts/package-desktop.ps1
+          -Rid "${{ matrix.rid }}"
+          -OutputDirectory "${{ runner.temp }}/desktop-${{ matrix.rid }}"
+          -ArchivePath "${{ runner.temp }}/${{ matrix.asset }}-${{ matrix.rid }}-${{ github.sha }}-run-${{ github.run_number }}-${{ github.run_attempt }}.${{ matrix.extension }}"
+          -BundleVersion "0.0.${{ github.run_number }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset }}-${{ matrix.rid }}-${{ github.sha }}-run-${{ github.run_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/${{ matrix.asset }}-${{ matrix.rid }}-${{ github.sha }}-run-${{ github.run_number }}-${{ github.run_attempt }}.${{ matrix.extension }}
+          retention-days: 7
+          if-no-files-found: error
 
   browser:
     name: WebAssembly
@@ -53,8 +73,15 @@ jobs:
           dotnet-version: 10.0.x
       - name: Install WebAssembly tools
         run: dotnet workload install wasm-tools --skip-manifest-update
-      - name: Publish browser GUI
-        run: dotnet publish ./FE_Map_Creator.Gui.Browser/FE_Map_Creator.Gui.Browser.csproj -c Release -o "${{ runner.temp }}/web"
-      - name: Validate static site
+      - name: Package validated browser GUI
         shell: pwsh
-        run: ./scripts/smoke-test-web.ps1 -PublishDirectory "${{ runner.temp }}/web"
+        run: >
+          ./scripts/package-web.ps1
+          -OutputDirectory "${{ runner.temp }}/web"
+          -ArchivePath "${{ runner.temp }}/FE-Map-Creator-Web-wwwroot-${{ github.sha }}-run-${{ github.run_number }}-${{ github.run_attempt }}.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: FE-Map-Creator-Web-wwwroot-${{ github.sha }}-run-${{ github.run_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/FE-Map-Creator-Web-wwwroot-${{ github.sha }}-run-${{ github.run_number }}-${{ github.run_attempt }}.zip
+          retention-days: 7
+          if-no-files-found: error

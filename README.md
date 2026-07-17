@@ -53,6 +53,10 @@ dotnet publish .\FE_Map_Creator.Gui.Browser\FE_Map_Creator.Gui.Browser.csproj -c
 
 The static site is under the publish directory's `wwwroot\`. Pushes to `main` deploy it to GitHub Pages. Version tags publish self-contained Windows x64, Linux x64, macOS x64, macOS arm64, and Web archives to GitHub Releases.
 
+Pull requests, pushes to `main`, and manually dispatched CI runs also produce downloadable Windows x64, Linux x64, macOS x64, macOS arm64, and validated Web `wwwroot` archives. Open the relevant run under **Actions > CI**, then download the package from its **Artifacts** section. Artifact names include the platform/RID, commit SHA, run number, and run attempt.
+
+CI artifacts are short-lived, unsigned, non-release builds intended for testing. They are not GitHub Releases; use the [latest release](https://github.com/laqieer/FEMapCreator/releases/latest) for supported downloads.
+
 Run the platform-neutral GUI tests:
 
 ```powershell
