@@ -35,7 +35,7 @@
         <MenuItem Header="GitHub _Repository" Click="repository_link_click" />
         <MenuItem Header="_Issues" Click="issues_link_click" />
         <MenuItem Header="_Discussions" Click="discussions_link_click" />
-        <MenuItem Header="_User guide" Click="user_guide_link_click" />
+        <MenuItem Header="_Wiki" Click="wiki_link_click" />
         <MenuItem Header="_Latest release" Click="release_link_click" />
       </MenuItem>
     </Menu>

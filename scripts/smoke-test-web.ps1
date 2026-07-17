@@ -30,7 +30,7 @@ $required_links = @(
   "https://github.com/laqieer/FEMapCreator",
   "https://github.com/laqieer/FEMapCreator/issues",
   "https://github.com/laqieer/FEMapCreator/discussions",
-  "https://github.com/laqieer/FEMapCreator/blob/main/docs/user-guide/Home.md",
+  "https://github.com/laqieer/FEMapCreator/wiki",
   "https://github.com/laqieer/FEMapCreator/releases/latest"
 )
 foreach ($link in $required_links)

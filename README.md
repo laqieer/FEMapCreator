@@ -9,7 +9,7 @@ https://bwdyeti.com/programs/#MapGen
 [Repository](https://github.com/laqieer/FEMapCreator) |
 [Issues](https://github.com/laqieer/FEMapCreator/issues) |
 [Discussions](https://github.com/laqieer/FEMapCreator/discussions) |
-[User guide](https://github.com/laqieer/FEMapCreator/blob/main/docs/user-guide/Home.md) |
+[Wiki](https://github.com/laqieer/FEMapCreator/wiki) |
 [Latest release](https://github.com/laqieer/FEMapCreator/releases/latest)
 
 All front ends share the platform-neutral `FE_Map_Creator.Core` generation engine:

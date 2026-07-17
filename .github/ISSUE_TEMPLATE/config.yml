@@ -12,6 +12,6 @@ contact_links:
   - name: General feedback
     url: https://github.com/laqieer/FEMapCreator/discussions/categories/general
     about: Leave feedback or start a conversation that is not a reproducible defect.
-  - name: User guide
-    url: https://github.com/laqieer/FEMapCreator/blob/main/docs/user-guide/Home.md
+  - name: Documentation wiki
+    url: https://github.com/laqieer/FEMapCreator/wiki
     about: Check usage documentation and project guidance before opening a report.
