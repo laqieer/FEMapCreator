@@ -28,8 +28,23 @@ internal interface ICli_Executor
     Cli_Output output,
     CancellationToken cancellation_token);
 
+  Task<Cli_Execution_Result> map_edit_async(
+    Map_Edit_Request request,
+    Cli_Output output,
+    CancellationToken cancellation_token);
+
+  Task<Cli_Execution_Result> map_inspect_async(
+    Map_Inspect_Request request,
+    Cli_Output output,
+    CancellationToken cancellation_token);
+
   Task<Cli_Execution_Result> tilesets_list_async(
     Tilesets_List_Request request,
+    Cli_Output output,
+    CancellationToken cancellation_token);
+
+  Task<Cli_Execution_Result> tilesets_terrain_async(
+    Tilesets_Terrain_Request request,
     Cli_Output output,
     CancellationToken cancellation_token);
 

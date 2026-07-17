@@ -5,7 +5,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FE_Map_Creator.Cli.Requests;
+using FE_Map_Creator.Editing;
 using FE_Map_Creator.Generation;
+using FEXNA_Library;
 
 #nullable disable
 namespace FE_Map_Creator.Cli.Execution;
@@ -14,9 +16,8 @@ namespace FE_Map_Creator.Cli.Execution;
 /// Core-backed <see cref="ICli_Executor"/> for <c>generate</c> (single-job and
 /// homogeneous <c>--count</c> batches), <c>repair</c> (single-file and homogeneous
 /// <c>--input-dir</c> directory batches), heterogeneous <c>batch --manifest</c>
-/// orchestration, and <c>tilesets list</c>. All batch modes dispatch to the same
-/// single-job <see cref="run_generate_job"/>/<see cref="run_repair_job"/> methods used by
-/// direct single-job calls, so generation/repair logic is never duplicated.
+/// orchestration, map editing/inspection, and tileset discovery. All batch modes
+/// dispatch to the same single-job methods used by direct calls.
 /// </summary>
 internal sealed class Core_Cli_Executor : ICli_Executor
 {
@@ -54,7 +55,8 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     string manifest_directory = Path.GetDirectoryName(manifest_path);
     foreach (Map_Job_Spec job in manifest.Jobs)
     {
-      if (string.Equals(job.Operation, "repair", StringComparison.OrdinalIgnoreCase))
+      if (string.Equals(job.Operation, "repair", StringComparison.OrdinalIgnoreCase) ||
+          string.Equals(job.Operation, "edit", StringComparison.OrdinalIgnoreCase))
         Repair_Input_Preflight.validate_manifest_mar_job(job, manifest_directory);
     }
 
@@ -81,6 +83,65 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     return new Cli_Execution_Result(progress.exit_code(), progress.summary("Batch"));
   }
 
+  public async Task<Cli_Execution_Result> map_edit_async(
+    Map_Edit_Request request,
+    Cli_Output output,
+    CancellationToken cancellation_token)
+  {
+    (Map_Job_Spec spec, string spec_directory) = load_optional_spec(request.Spec, "edit");
+    return await run_edit_job(request, spec, spec_directory, output, cancellation_token).ConfigureAwait(false);
+  }
+
+  public Task<Cli_Execution_Result> map_inspect_async(
+    Map_Inspect_Request request,
+    Cli_Output output,
+    CancellationToken cancellation_token)
+  {
+    cancellation_token.ThrowIfCancellationRequested();
+    string input_path = resolve_optional_full_path(request.Input);
+    if (input_path == null)
+      throw new InvalidOperationException("--input is required.");
+    Map_Codec_Registry registry = new Map_Codec_Registry();
+    Map_Format format = registry.format_from_path(input_path);
+    if (format == Map_Format.Mar)
+      Repair_Input_Preflight.validate_mar_metadata(input_path, request.Width, request.Height, request.Tileset);
+    Map_Document document = registry.read(
+      input_path,
+      new Map_Read_Options
+      {
+        Width = request.Width,
+        Height = request.Height,
+        Tileset = request.Tileset,
+      },
+      format);
+    validate_supplied_dimensions(request.Width, request.Height, document);
+    int[][] tiles = row_major_tiles(document.Tiles);
+    if (request.Json)
+    {
+      Json_Output.write(output.Out, new
+      {
+        path = input_path,
+        format = Map_Format_Names.stable(format),
+        width = document.Width,
+        height = document.Height,
+        tileset = document.Tileset,
+        tilesetImageSource = document.Tileset_Image_Source,
+        tiles,
+      });
+      return Task.FromResult(Cli_Execution_Result.success(""));
+    }
+
+    output.Out.WriteLine($"Path: {input_path}");
+    output.Out.WriteLine($"Format: {Map_Format_Names.stable(format)}");
+    output.Out.WriteLine($"Dimensions: {document.Width}x{document.Height}");
+    output.Out.WriteLine($"Tileset: {display_or_none(document.Tileset)}");
+    output.Out.WriteLine($"Tileset image source: {display_or_none(document.Tileset_Image_Source)}");
+    output.Out.WriteLine("Tiles:");
+    foreach (int[] row in tiles)
+      output.Out.WriteLine($"  {string.Join(" ", row)}");
+    return Task.FromResult(Cli_Execution_Result.success(""));
+  }
+
   public Task<Cli_Execution_Result> tilesets_list_async(
     Tilesets_List_Request request,
     Cli_Output output,
@@ -88,6 +149,23 @@ internal sealed class Core_Cli_Executor : ICli_Executor
   {
     string assets_root = Job_Merge.resolve_path(request.Assets_Dir, null, null) ?? AppContext.BaseDirectory;
     Tileset_Catalog catalog = new Tileset_Catalog(assets_root);
+    if (request.Json)
+    {
+      Json_Output.write(output.Out, new
+      {
+        assetsRoot = assets_root,
+        tilesets = catalog.tilesets.Select(asset => new
+        {
+          name = asset.Name,
+          imagePath = asset.Image_Path,
+          generationDataPath = asset.Generation_Data_Path,
+          hasImage = asset.Has_Image,
+          hasGenerationData = asset.Has_Generation_Data,
+          diagnostic = asset.Missing_Pair_Diagnostic,
+        }).ToArray(),
+      });
+      return Task.FromResult(Cli_Execution_Result.success(""));
+    }
     int count = 0;
     foreach (Tileset_Asset asset in catalog.tilesets)
     {
@@ -99,6 +177,68 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       output.Out.WriteLine(line);
     }
     return Task.FromResult(Cli_Execution_Result.success($"Listed {count} tileset(s) from \"{assets_root}\"."));
+  }
+
+  public Task<Cli_Execution_Result> tilesets_terrain_async(
+    Tilesets_Terrain_Request request,
+    Cli_Output output,
+    CancellationToken cancellation_token)
+  {
+    cancellation_token.ThrowIfCancellationRequested();
+    string assets_root = Job_Merge.resolve_path(request.Assets_Dir, null, null) ?? AppContext.BaseDirectory;
+    Tileset_Catalog catalog = new Tileset_Catalog(assets_root);
+    Tileset_Asset asset = catalog.resolve(
+      request.Tileset,
+      require_image: false,
+      require_generation_data: false);
+    Tileset_Metadata_Reader tileset_reader = new Tileset_Metadata_Reader();
+    Dictionary<int, Data_Tileset> tilesets = Terrain_Resolver.read_metadata(assets_root, tileset_reader);
+    Data_Tileset tileset = Terrain_Resolver.find(tilesets, tileset_reader, asset.Name);
+    if (tileset == null)
+    {
+      throw new InvalidOperationException(
+        $"No Tileset_Data.xml terrain metadata matches tileset \"{asset.Name}\".");
+    }
+    string terrain_path = Path.Combine(assets_root, "Terrain_Data.xml");
+    if (!File.Exists(terrain_path))
+      throw new FileNotFoundException("Terrain_Data.xml was not found under the asset root.", terrain_path);
+    Dictionary<int, Data_Terrain> terrain_catalog = new Terrain_Metadata_Reader().read(terrain_path);
+    var terrains = tileset.Terrain_Tags
+      .Where(tag => tag > 0)
+      .GroupBy(tag => tag)
+      .OrderBy(group => group.Key)
+      .Select(group => new
+      {
+        id = group.Key,
+        name = terrain_catalog.TryGetValue(group.Key, out Data_Terrain terrain) ? terrain.Name : "",
+        tileCount = group.Count(),
+      })
+      .ToArray();
+
+    if (request.Json)
+    {
+      Json_Output.write(output.Out, new
+      {
+        assetsRoot = assets_root,
+        tileset = asset.Name,
+        metadataId = tileset.Id,
+        metadataName = tileset.Name,
+        graphicName = tileset.Graphic_Name,
+        tileCount = tileset.Terrain_Tags.Count,
+        tileTerrainTags = tileset.Terrain_Tags.ToArray(),
+        terrains,
+      });
+      return Task.FromResult(Cli_Execution_Result.success(""));
+    }
+
+    output.Out.WriteLine($"Tileset: {asset.Name}");
+    output.Out.WriteLine($"Metadata: {tileset.Name} ({tileset.Graphic_Name}), {tileset.Terrain_Tags.Count} tile tag(s)");
+    foreach (var terrain in terrains)
+    {
+      output.Out.WriteLine(
+        $"  {terrain.id}: {display_or_none(terrain.name)} ({terrain.tileCount} tile(s))");
+    }
+    return Task.FromResult(Cli_Execution_Result.success(""));
   }
 
   public Task<Cli_Execution_Result> validate_async(
@@ -198,6 +338,108 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       $"{result.Skipped_Zero_Cell_Count} zero cell(s) skipped)."));
   }
 
+  /// <summary>Single map edit job shared by direct <c>map edit</c> and manifest jobs.</summary>
+  private static Task<Cli_Execution_Result> run_edit_job(
+    Map_Edit_Request request,
+    Map_Job_Spec spec,
+    string spec_directory,
+    Cli_Output output,
+    CancellationToken cancellation_token)
+  {
+    cancellation_token.ThrowIfCancellationRequested();
+    validate_standalone_edit_spec(spec);
+    Map_Codec_Registry registry = new Map_Codec_Registry();
+    string input_path = Job_Merge.resolve_path(request.Input, spec?.Input, spec_directory);
+    int? width = request.Width ?? spec?.Width;
+    int? height = request.Height ?? spec?.Height;
+    string tileset_override = Job_Merge.merge_string(request.Tileset, spec?.Tileset);
+    bool tileset_was_overridden = !string.IsNullOrWhiteSpace(tileset_override);
+    Map_Document input_document = null;
+    Map_Format? input_format = null;
+    Map_State state;
+
+    if (string.IsNullOrWhiteSpace(input_path))
+    {
+      if (!width.HasValue || !height.HasValue || width.Value <= 0 || height.Value <= 0)
+        throw new InvalidOperationException("New maps require positive --width and --height values (directly or via --spec).");
+      state = new Map_State(
+        new int[width.Value, height.Value],
+        new bool[width.Value, height.Value],
+        new bool[width.Value, height.Value],
+        new int[width.Value, height.Value]);
+    }
+    else
+    {
+      input_format = registry.format_from_path(input_path);
+      if (input_format == Map_Format.Mar)
+      {
+        Repair_Input_Preflight.validate_mar_metadata(
+          input_path, width, height, tileset_override);
+      }
+      input_document = registry.read(
+        input_path,
+        new Map_Read_Options
+        {
+          Width = width,
+          Height = height,
+          Tileset = tileset_override,
+        },
+        input_format);
+      validate_supplied_dimensions(width, height, input_document);
+      bool[,] drawn = new bool[input_document.Width, input_document.Height];
+      for (int y = 0; y < input_document.Height; ++y)
+      {
+        for (int x = 0; x < input_document.Width; ++x)
+          drawn[x, y] = true;
+      }
+      state = new Map_State(
+        input_document.Tiles,
+        drawn,
+        new bool[input_document.Width, input_document.Height],
+        new int[input_document.Width, input_document.Height]);
+    }
+
+    state = apply_spec_edits(state, spec, cancellation_token);
+
+    if (request.In_Place && input_path == null)
+      throw new InvalidOperationException("--in-place requires an input map.");
+    if (request.In_Place && !string.IsNullOrWhiteSpace(spec?.Output))
+      throw new InvalidOperationException("--in-place cannot be combined with a spec output.");
+    string output_path = request.In_Place
+      ? input_path
+      : Job_Merge.resolve_path(request.Output, spec?.Output, spec_directory);
+    if (string.IsNullOrWhiteSpace(output_path))
+      throw new InvalidOperationException("--output is required unless --in-place or --spec supplies it.");
+    Map_Format output_format = Output_Format_Resolver.resolve(request.Format, spec?.Format, output_path, registry);
+    if (request.In_Place && input_format.HasValue && output_format != input_format.Value)
+    {
+      throw new InvalidOperationException(
+        "--in-place cannot change the file format; use --output when converting between map, mar, and tmx.");
+    }
+
+    string effective_tileset = tileset_was_overridden ? tileset_override : input_document?.Tileset;
+    string assets_root = Job_Merge.resolve_path(request.Assets_Dir, spec?.AssetsDir, spec_directory)
+      ?? AppContext.BaseDirectory;
+    string tileset_image = Job_Merge.resolve_path(request.Tileset_Image, spec?.TilesetImage, spec_directory);
+    (Map_Document output_document, Map_Write_Options write_options) = Map_Edit_Output_Builder.build(
+      state.Tiles,
+      output_format,
+      effective_tileset,
+      tileset_was_overridden,
+      tileset_image,
+      assets_root,
+      input_document,
+      input_format,
+      input_path,
+      output_path);
+    Safe_Output.write(
+      output_path,
+      request.Force || request.In_Place,
+      temporary_path => registry.write(temporary_path, output_document, write_options, output_format));
+    return Task.FromResult(Cli_Execution_Result.success(
+      $"Edited \"{output_path}\" ({state.Width}x{state.Height}, {Map_Format_Names.stable(output_format)})."));
+  }
+
   /// <summary>Single generate job, shared by direct single-job calls, --count batches
   /// (per generated job), and manifest jobs (per "generate" job).</summary>
   private static async Task<Cli_Execution_Result> run_generate_job(
@@ -228,6 +470,7 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       Array.Copy(template_document.Tiles, tiles, template_document.Tiles.Length);
 
     Map_State state = Map_State_Builder.build_for_generate(tiles, template_document != null, spec, width.Value, height.Value);
+    state = apply_spec_edits(state, spec, cancellation_token);
 
     string output_path = Job_Merge.resolve_path(request.Output, spec?.Output, spec_directory);
     if (string.IsNullOrWhiteSpace(output_path))
@@ -243,7 +486,7 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       request.Generation_Data, spec?.GenerationData,
       require_image);
     Asset_Resolution.require_terrain_metadata_if_constrained(
-      state.Terrain, width.Value, height.Value, resolved.Terrain_Metadata, resolved.Asset.Name);
+      state.Terrain, state.Width, state.Height, resolved.Terrain_Metadata, resolved.Asset.Name);
 
     Map_Generation_Engine engine = new Map_Generation_Engine(resolved.Generation_Data, resolved.Terrain_Metadata);
     Map_Generation_Options options = new Map_Generation_Options
@@ -270,12 +513,13 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       output.Error,
       "Generate",
       output_path,
-      checked(width.Value * height.Value));
+      checked(state.Width * state.Height));
     Map_Generation_Result result = await Task.Run(
       () => engine.generate(state, options, cancellation_token, null, progress), cancellation_token).ConfigureAwait(false);
     progress.complete();
 
-    (Map_Document document, Map_Write_Options write_options) = Output_Document_Builder.build(state.Tiles, output_format, resolved.Asset);
+    (Map_Document document, Map_Write_Options write_options) =
+      Output_Document_Builder.build(state.Tiles, output_format, resolved.Asset, output_path);
     return Incomplete_Result_Writer.write(
       output_path, request.Force, request.Allow_Incomplete, request.Require_Complete,
       result, "Generated",
@@ -312,6 +556,10 @@ internal sealed class Core_Cli_Executor : ICli_Executor
     string effective_selector = !string.IsNullOrWhiteSpace(selector_override) ? selector_override : document.Tileset;
 
     Map_State state = Map_State_Builder.build_for_repair(document.Tiles, spec, document.Width, document.Height);
+    Map_Generation_Algorithm algorithm = Algorithm_Selection.resolve(request.Algorithm, spec?.Algorithm);
+    if (algorithm == Map_Generation_Algorithm.Experimental_Constraint)
+      mark_imported_zero_holes(state);
+    state = apply_spec_edits(state, spec, cancellation_token);
 
     string output_path = request.In_Place ? input.Input_Path : Job_Merge.resolve_path(request.Output, spec?.Output, spec_directory);
     if (string.IsNullOrWhiteSpace(output_path))
@@ -326,11 +574,8 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       request.Generation_Data, spec?.GenerationData,
       require_image);
     Asset_Resolution.require_terrain_metadata_if_constrained(
-      state.Terrain, document.Width, document.Height, resolved.Terrain_Metadata, resolved.Asset.Name);
+      state.Terrain, state.Width, state.Height, resolved.Terrain_Metadata, resolved.Asset.Name);
 
-    Map_Generation_Algorithm algorithm = Algorithm_Selection.resolve(request.Algorithm, spec?.Algorithm);
-    if (algorithm == Map_Generation_Algorithm.Experimental_Constraint)
-      mark_imported_zero_holes(state);
     Map_Generation_Engine engine = new Map_Generation_Engine(resolved.Generation_Data, resolved.Terrain_Metadata);
     Map_Repair_Options options = new Map_Repair_Options
     {
@@ -357,12 +602,13 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       output.Error,
       "Repair",
       input.Input_Path,
-      checked(document.Width * document.Height));
+      checked(state.Width * state.Height));
     Map_Generation_Result result = await Task.Run(
       () => engine.repair(state, options, cancellation_token, null, progress), cancellation_token).ConfigureAwait(false);
     progress.complete();
 
-    (Map_Document output_document, Map_Write_Options write_options) = Output_Document_Builder.build(state.Tiles, output_format, resolved.Asset);
+    (Map_Document output_document, Map_Write_Options write_options) =
+      Output_Document_Builder.build(state.Tiles, output_format, resolved.Asset, output_path);
     return Incomplete_Result_Writer.write(
       output_path, request.Force || request.In_Place, request.Allow_Incomplete, request.Require_Complete,
       result, "Repaired",
@@ -572,13 +818,15 @@ internal sealed class Core_Cli_Executor : ICli_Executor
       return run_generate_job(new Generate_Request(), job, manifest_directory, output, cancellation_token);
     if (string.Equals(job.Operation, "repair", StringComparison.OrdinalIgnoreCase))
       return run_repair_job(new Repair_Request(), job, manifest_directory, output, cancellation_token);
+    if (string.Equals(job.Operation, "edit", StringComparison.OrdinalIgnoreCase))
+      return run_edit_job(new Map_Edit_Request(), job, manifest_directory, output, cancellation_token);
     if (string.Equals(job.Operation, "batch", StringComparison.OrdinalIgnoreCase))
     {
       return Task.FromResult(Cli_Execution_Result.failure(
         $"Manifest job {job_number} declares operation \"batch\"; nested batch operations are not supported."));
     }
     return Task.FromResult(Cli_Execution_Result.failure(
-      $"Manifest job {job_number} has unsupported operation \"{job.Operation}\"; expected \"generate\" or \"repair\"."));
+      $"Manifest job {job_number} has unsupported operation \"{job.Operation}\"; expected \"edit\", \"generate\", or \"repair\"."));
   }
 
   private static (Map_Job_Spec spec, string spec_directory) load_optional_spec(string spec_path_raw, string expected_operation)
@@ -611,5 +859,70 @@ internal sealed class Core_Cli_Executor : ICli_Executor
   private static string resolve_optional_full_path(string path)
   {
     return string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
+  }
+
+  private static Map_State apply_spec_edits(
+    Map_State state,
+    Map_Job_Spec spec,
+    CancellationToken cancellation_token)
+  {
+    return spec?.Edits == null || spec.Edits.Length == 0
+      ? state
+      : new Map_Edit_Engine().apply(state, spec.Edits, cancellation_token);
+  }
+
+  private static void validate_standalone_edit_spec(Map_Job_Spec spec)
+  {
+    if (spec == null)
+      return;
+    if (spec.Drawn != null || spec.Locked != null || spec.Terrain != null)
+    {
+      throw new InvalidOperationException(
+        "Standalone map edit cannot persist drawn, locked, or terrain matrices because map/mar/tmx store tile values only. " +
+        "Use those fields in the same generate or repair spec that consumes them.");
+    }
+    if (spec.Edits == null)
+      return;
+    for (int index = 0; index < spec.Edits.Length; ++index)
+    {
+      Map_Edit_Action action = spec.Edits[index].action($"Edits[{index}]");
+      if (action != Map_Edit_Action.Set_Tile &&
+          action != Map_Edit_Action.Resize)
+      {
+        throw new InvalidOperationException(
+          $"Edits[{index}] action \"{spec.Edits[index].Action}\" changes only transient drawn/lock/terrain state, " +
+          "which standalone map edit cannot persist. Use it in the same generate or repair spec that consumes that state.");
+      }
+    }
+  }
+
+  private static void validate_supplied_dimensions(
+    int? width,
+    int? height,
+    Map_Document document)
+  {
+    if (width.HasValue && width.Value != document.Width)
+      throw new InvalidOperationException($"--width {width.Value} does not match the input map's actual width {document.Width}.");
+    if (height.HasValue && height.Value != document.Height)
+      throw new InvalidOperationException($"--height {height.Value} does not match the input map's actual height {document.Height}.");
+  }
+
+  private static int[][] row_major_tiles(int[,] tiles)
+  {
+    int width = tiles.GetLength(0);
+    int height = tiles.GetLength(1);
+    int[][] rows = new int[height][];
+    for (int y = 0; y < height; ++y)
+    {
+      rows[y] = new int[width];
+      for (int x = 0; x < width; ++x)
+        rows[y][x] = tiles[x, y];
+    }
+    return rows;
+  }
+
+  private static string display_or_none(string value)
+  {
+    return string.IsNullOrWhiteSpace(value) ? "(none)" : value;
   }
 }

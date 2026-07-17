@@ -14,13 +14,13 @@ namespace FE_Map_Creator.Cli.Execution;
 internal static class Output_Document_Builder
 {
   internal static (Map_Document document, Map_Write_Options write_options) build(
-    int[,] tiles, Map_Format output_format, Tileset_Asset asset)
+    int[,] tiles, Map_Format output_format, Tileset_Asset asset, string output_path)
   {
     string tileset_value = output_format == Map_Format.Text
       ? Tileset_Asset_Naming.identifier(asset.Name)
       : asset.Name;
     string image_source = output_format == Map_Format.Tmx && asset.Has_Image
-      ? Path.GetFileName(asset.Image_Path)
+      ? Tmx_Image_Source.from_file(asset.Image_Path, output_path)
       : "";
 
     Map_Document document = new Map_Document(tiles, tileset_value)

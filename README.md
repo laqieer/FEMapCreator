@@ -15,7 +15,7 @@ https://bwdyeti.com/programs/#MapGen
 All front ends share the platform-neutral `FE_Map_Creator.Core` generation engine:
 
 - **Cross-platform GUI** (`FE_Map_Creator.Gui`) - one Avalonia UI for Windows, macOS, Linux, and WebAssembly. It includes bundled tilesets, tile painting/erasing, brush/rectangle/flood-fill tools, locks, terrain constraints, resize, undo/redo, `.map`/`.mar`/`.tmx` open/save, and generation/repair.
-- **CLI** (`FE_Map_Creator.Cli`) - Windows, Linux, and macOS console workflows for generation, repair, validation, and batches.
+- **CLI** (`FE_Map_Creator.Cli`) - Windows, Linux, and macOS console workflows for map editing/conversion/inspection, generation, repair, validation, discovery, and batches.
 - **Legacy GUI** (`FE_Map_Creator`) - the original Windows-only WinForms editor, retained for legacy tileset-processing and specialized import/edit workflows.
 
 ## Requirements
@@ -98,7 +98,43 @@ List bundled tilesets (selector names, asset paths, and any missing-pairing diag
 
 ```powershell
 FE_Map_Creator.Cli.exe tilesets list
+FE_Map_Creator.Cli.exe tilesets list --json
+FE_Map_Creator.Cli.exe tilesets terrain --tileset "FE6 - Fields - 01020304" --json
 ```
+
+`tilesets list --json` is stable machine-readable asset discovery. `tilesets terrain`
+resolves the selected tileset's per-tile terrain tags from `Tileset_Data.xml` and the
+corresponding id/name catalog from `Terrain_Data.xml`; it does not require a generation
+data `.dat` file.
+
+Create a map, apply ordered edits from a versioned spec, resize it, and save it:
+
+```powershell
+FE_Map_Creator.Cli.exe map edit --spec edit.json
+```
+
+Load and convert without changing tile values:
+
+```powershell
+FE_Map_Creator.Cli.exe map edit --input chapter.map --output chapter.tmx --assets-dir .
+FE_Map_Creator.Cli.exe map edit --input chapter.mar --width 30 --height 20 --tileset "FE6 - Fields - 01020304" --output chapter.map
+```
+
+Edit atomically in place, or inspect metadata and the row-major tile matrix:
+
+```powershell
+FE_Map_Creator.Cli.exe map edit --input chapter.map --spec edits.json --in-place
+FE_Map_Creator.Cli.exe map inspect --input chapter.map
+FE_Map_Creator.Cli.exe map inspect --input chapter.map --json
+```
+
+`map edit` accepts `--input`, `--output`, `--in-place`, `--spec`, `--format`,
+`--width`, `--height`, `--tileset`, `--assets-dir`, `--tileset-image`, and
+`--force`. Direct options override spec values. Omit `--input` to create a map;
+positive dimensions are then required. MAR input always requires width, height, and
+tileset metadata. `--in-place` and `--output` are mutually exclusive, and in-place
+conversion to another format is rejected so an extension never silently disagrees
+with its contents.
 
 Generate a blank map (every cell open, filled by the generation engine):
 
@@ -221,7 +257,7 @@ For `maps\chapter-1.mar`, a `maps\chapter-1.mapgen.json` sidecar can supply the 
 }
 ```
 
-Run a heterogeneous batch of generate/repair jobs from one manifest:
+Run a heterogeneous batch of edit/generate/repair jobs from one manifest:
 
 ```powershell
 FE_Map_Creator.Cli.exe batch --manifest manifest.json --fail-fast
@@ -229,7 +265,12 @@ FE_Map_Creator.Cli.exe batch --manifest manifest.json --fail-fast
 
 ### JSON job spec (v1)
 
-`Map_Job_Spec` documents (`"version": 1` required) drive `--spec` for a single `generate`/`repair` job. All fields are optional except `Version`; explicit CLI options take precedence over spec values, and spec-relative paths (`Input`, `Template`, `Output`, asset overrides) resolve relative to the spec file's own directory.
+`Map_Job_Spec` documents (`"version": 1` required) drive `--spec` for a single
+`map edit`, `generate`, or `repair` job. All fields are optional except `Version`;
+explicit CLI options take precedence over spec values, and spec-relative paths
+(`Input`, `Template`, `Output`, asset overrides) resolve relative to the spec file's
+own directory. When `operation` is present it must match the command (`edit`,
+`generate`, or `repair`).
 
 ```json
 {
@@ -265,6 +306,17 @@ FE_Map_Creator.Cli.exe batch --manifest manifest.json --fail-fast
     [0, 0, 0, 0, -5, -5, -5, 0],
     [0, 0, 0, 0, -5, -5, -5, 0],
     [0, 0, 0, 0, 0, 0, 0, 0]
+  ],
+  "edits": [
+    {
+      "action": "set-tile",
+      "shape": "rectangle",
+      "x": 2,
+      "y": 2,
+      "endX": 4,
+      "endY": 3,
+      "tile": 17
+    }
   ]
 }
 ```
@@ -291,14 +343,93 @@ Constraint matrices (`drawn`, `locked`, `terrain`) are `[row][column]` (JSON arr
 - `locked` cells are preserved as-is during generation/repair and must also be `drawn` (a locked-but-undrawn cell is a validation error); locking a cell in `generate` without `--template` is likewise a conflict, since there would be no source tile to lock.
 - `terrain` values are signed per-cell tags matched against the resolved tileset's `Tileset_Data.xml` terrain metadata: a **positive** value requires that terrain tag (`terrain[x,y] == N`), a **negative** value forbids it (`terrain[x,y] != -N`), and `0` means unconstrained. A cell cannot be both `locked` and terrain-constrained (nonzero `terrain`) at once. A nonzero terrain constraint on a tileset with no resolvable terrain metadata is a hard error rather than a silently ignored constraint.
 
+### Ordered map edits (v1)
+
+`edits` is an ordered array. Each operation sees the result of every preceding
+operation, and the whole array is transactional: validation or execution failure leaves
+the input/output untouched. Coordinates are zero-based `(x, y)`, with `x` increasing
+right and `y` increasing down.
+
+```json
+{
+  "version": 1,
+  "operation": "edit",
+  "input": "chapter.map",
+  "output": "chapter-edited.tmx",
+  "format": "tmx",
+  "tileset": "FE6 - Fields - 01020304",
+  "edits": [
+    { "action": "set-tile", "x": 3, "y": 2, "tile": 0 },
+    {
+      "action": "set-tile",
+      "shape": "rectangle",
+      "x": 8,
+      "y": 4,
+      "endX": 11,
+      "endY": 7,
+      "tile": 0
+    },
+    {
+      "action": "set-tile",
+      "shape": "flood-fill",
+      "x": 0,
+      "y": 0,
+      "tile": 23
+    },
+    { "action": "resize", "width": 40, "height": 25 }
+  ]
+}
+```
+
+- Actions: `set-tile`, `erase`, `lock`, `unlock`, `require-terrain`,
+  `forbid-terrain`, `resize`, `clear-locks`, and `clear-terrain`.
+- Shapes default to `cell`. `rectangle` uses inclusive endpoints, accepts either
+  endpoint order, and clips to the map boundary. `flood-fill` uses four-way
+  connectivity and matches the starting cell's relevant tile/drawn, lock, or terrain
+  state.
+- Cell and flood-fill origins must be on-map. A resize must have positive dimensions,
+  preserves the top-left overlap of tile/drawn/lock/terrain state, drops cells outside a
+  shrink, and initializes newly added cells as tile `0`, open, unlocked, and
+  unconstrained.
+- `set-tile` accepts non-negative tile indices. It marks the cell drawn and clears its
+  lock/terrain state. `erase` writes tile `0` and marks the cell open. Lock and terrain
+  operations keep the parallel state mutually safe in the same way as the GUI editor.
+- Generate applies edits transactionally before generation. Repair applies edits before
+  validation/generation; experimental repair first reopens zero-valued holes imported
+  from the file, then applies edits, so an explicit edited tile `0` remains drawn.
+  Resizes therefore affect terrain checks, progress totals, generation, and output.
+
+Plain `.map`, `.mar`, and `.tmx` files store tile values, not the GUI/Core `drawn`,
+`locked`, or `terrain` arrays. Those state edits are meaningful when consumed by a
+following generation/repair step in the **same spec execution**. Standalone `map edit`
+rejects erase, lock, terrain, and clear-state actions plus
+`drawn`/`locked`/`terrain` matrices rather than silently discarding them; standalone
+`set-tile`, resize, and conversion operations are safe to serialize.
+
 ### Batch manifest (v1)
 
-`batch --manifest` reads a `Map_Job_Manifest` document: `"version": 1` plus a top-level `jobs` array, where each entry is itself a `Map_Job_Spec` (same schema and validation as above, including its own `operation`, `width`/`height`, `drawn`/`locked`/`terrain`, and optional `seed`). Jobs run independently and are not otherwise reproducible from a single batch-wide seed the way `generate --count` is - give each job its own `seed` if you need every job individually reproducible.
+`batch --manifest` reads a `Map_Job_Manifest` document: `"version": 1` plus a top-level `jobs` array, where each entry is itself a `Map_Job_Spec` (same schema and validation as above,
+including its own `operation`, dimensions, constraints, ordered `edits`, and optional
+seed). `operation: "edit"` dispatches through the same single-job implementation as
+`map edit`; nested batch operations remain unsupported. Jobs run independently and are
+not otherwise reproducible from a single batch-wide seed the way `generate --count`
+is - give each generation/repair job its own `seed` if needed.
 
 ```json
 {
   "version": 1,
   "jobs": [
+    {
+      "version": 1,
+      "operation": "edit",
+      "width": 8,
+      "height": 6,
+      "tileset": "FE6 - Fields - 01020304",
+      "output": "maps/layout.map",
+      "edits": [
+        { "action": "set-tile", "x": 2, "y": 1, "tile": 17 }
+      ]
+    },
     {
       "version": 1,
       "operation": "generate",
@@ -326,6 +457,33 @@ Constraint matrices (`drawn`, `locked`, `terrain`) are `[row][column]` (JSON arr
 - `--assets-dir`, `--tileset-image`, and `--generation-data` override where bundled tileset assets are read from (an explicit tileset selector is still required to pick a bundled `Tileset_Data.xml` entry and to name the output, unless both a PNG and a `.dat` override are supplied).
 - MAR input requires positive width/height and a tileset identifier from `--width`/`--height`/`--tileset`, a JSON job spec or manifest entry, or a directory-repair sidecar. Every MAR job is preflighted before its output is changed; directory and manifest modes preflight all MAR jobs before writing any batch output. These values are never inferred because the MAR format does not store them. Generated MAR output already gets dimensions from the generation request. MAR encodes each non-negative tile as `tileIndex * 32` in a signed 16-bit little-endian grid, so tile indices must be between `0` and `1023`.
 - TMX input supports explicit `<tile gid="...">` elements, CSV, and uncompressed, gzip-compressed, or zlib-compressed base64 layer data. zstd and other encodings/compressions are rejected with an actionable error. TMX output continues to write explicit tile elements.
+- Text `.map` embeds its tileset identifier and dimensions. TMX embeds dimensions, a
+  tileset name, and an image source. MAR embeds none of those values. `map edit`
+  preserves same-format `.map`/`.tmx` metadata by default, resolves bundled names and
+  rebases PNG paths relative to the destination TMX, uses `--tileset-image` as an
+  explicit TMX image override, and emits the short trailing identifier (for example
+  `01020304`) when a bundled tileset is converted to text `.map`. The image itself is
+  not copied.
+- `map inspect --json` emits one JSON object with stable keys: `path`, `format`,
+  `width`, `height`, `tileset`, `tilesetImageSource`, and `tiles` (row-major
+  `[y][x]`). MAR inspection requires `--width`, `--height`, and `--tileset`.
+
+### Front-end parity and non-goals
+
+| Capability | Avalonia GUI | CLI |
+| --- | --- | --- |
+| Paint/erase, rectangle, flood-fill, resize | Interactive | Ordered `Map_Job_Spec.edits` |
+| Drawn/locks/terrain constraints | Interactive and persistent in session | Applied within one edit/generate/repair spec execution |
+| `.map`/`.mar`/`.tmx` open/save/convert | Yes | `map edit` |
+| Map metadata/tile inspection | Visual editor | `map inspect` / `--json` |
+| Tileset/terrain discovery | Bundled pickers | `tilesets list/terrain`, including `--json` |
+| Generate/repair | Yes | Direct, homogeneous batch, or manifest |
+| Undo/redo | Yes | No; specs are declarative, ordered, and transactional |
+
+The CLI is not an interactive renderer, image/tileset authoring tool, or replacement
+for GUI undo history. It does not invent MAR metadata, persist lock/terrain state inside
+plain map formats, edit TMX object layers/properties beyond the supported tile layer, or
+silently coerce unsupported format metadata.
 
 ### Safe output, incomplete results, and exit codes
 

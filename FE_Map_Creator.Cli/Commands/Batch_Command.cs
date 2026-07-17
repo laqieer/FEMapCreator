@@ -13,12 +13,12 @@ internal static class Batch_Command
   {
     Option<string> manifest_option = new Option<string>("--manifest", "-m")
     {
-      Description = "Path to a JSON manifest containing generate/repair job specs. MAR repair jobs must include positive width/height and a tileset.",
+      Description = "Path to a JSON manifest containing edit/generate/repair job specs. MAR input jobs must include positive width/height and a tileset.",
       Required = true,
     };
     Option<bool> fail_fast_option = Common_Options.fail_fast();
 
-    Command command = new Command("batch", "Run a heterogeneous batch of generate/repair jobs from a JSON manifest.")
+    Command command = new Command("batch", "Run a heterogeneous batch of edit/generate/repair jobs from a JSON manifest.")
     {
       manifest_option,
       fail_fast_option,

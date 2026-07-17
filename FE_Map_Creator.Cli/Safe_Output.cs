@@ -26,7 +26,7 @@ internal static class Safe_Output
     try
     {
       write_temporary(temporary);
-      File.Move(temporary, full_target, true);
+      File.Move(temporary, full_target, overwrite);
     }
     finally
     {

@@ -9,7 +9,9 @@ internal static class Root_Command_Factory
 {
   internal static RootCommand build(ICli_Executor executor, Cli_Output output)
   {
-    RootCommand root = new RootCommand("FE Map Creator command-line tool for generating and repairing maps.");
+    RootCommand root = new RootCommand(
+      "FE Map Creator command-line tool for editing, inspecting, generating, repairing, and validating maps.");
+    root.Subcommands.Add(Map_Command.build(executor, output));
     root.Subcommands.Add(Generate_Command.build(executor, output));
     root.Subcommands.Add(Repair_Command.build(executor, output));
     root.Subcommands.Add(Batch_Command.build(executor, output));

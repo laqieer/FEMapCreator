@@ -158,7 +158,7 @@ internal static class Common_Options
   {
     return new Option<string>("--spec")
     {
-      Description = "Path to a versioned JSON job spec. Direct command options override it; repair specs may supply required MAR width, height, and tileset metadata.",
+      Description = "Path to a versioned JSON job spec. Direct command options override it; edit/repair specs may supply required MAR metadata.",
     };
   }
 
