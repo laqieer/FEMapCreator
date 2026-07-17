@@ -17,7 +17,7 @@ internal static class Output_Document_Builder
     int[,] tiles, Map_Format output_format, Tileset_Asset asset)
   {
     string tileset_value = output_format == Map_Format.Text
-      ? Asset_Naming.identifier(asset.Name)
+      ? Tileset_Asset_Naming.identifier(asset.Name)
       : asset.Name;
     string image_source = output_format == Map_Format.Tmx && asset.Has_Image
       ? Path.GetFileName(asset.Image_Path)

@@ -46,6 +46,16 @@ public sealed class Map_Codec_Registry
     return this.codec(format ?? this.format_from_path(filename)).read(filename, options);
   }
 
+  public Map_Document read(
+    Stream stream,
+    Map_Format format,
+    Map_Read_Options options = null)
+  {
+    if (stream == null)
+      throw new ArgumentNullException(nameof (stream));
+    return this.codec(format).read(stream, options);
+  }
+
   public void write(
     string filename,
     Map_Document document,
@@ -53,5 +63,16 @@ public sealed class Map_Codec_Registry
     Map_Format? format = null)
   {
     this.codec(format ?? this.format_from_path(filename)).write(filename, document, options);
+  }
+
+  public void write(
+    Stream stream,
+    Map_Format format,
+    Map_Document document,
+    Map_Write_Options options = null)
+  {
+    if (stream == null)
+      throw new ArgumentNullException(nameof (stream));
+    this.codec(format).write(stream, document, options);
   }
 }

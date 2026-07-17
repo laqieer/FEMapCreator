@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
 [assembly: SupportedOSPlatform("windows")]
-[assembly: AssemblyFileVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("2.0.0.0")]
 [assembly: AssemblyTitle("FE Map Creator")]
 [assembly: AssemblyDescription("")]
 [assembly: Guid("e39d5b29-a039-4d7d-aab1-b7d97d6f734a")]
@@ -13,4 +13,4 @@ using System.Runtime.Versioning;
 [assembly: AssemblyProduct("FE_Map_Creator")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCopyright("Copyright © bwdyeti.com 2014")]
-[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyVersion("2.0.0.0")]

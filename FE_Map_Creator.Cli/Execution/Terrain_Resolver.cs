@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using FEXNA_Library;
 
 #nullable disable
@@ -25,20 +24,7 @@ internal static class Terrain_Resolver
   {
     if (string.IsNullOrWhiteSpace(asset_name))
       return null;
-    string[] candidates =
-    {
-      Asset_Naming.description(asset_name),
-      Asset_Naming.name_without_identifier(asset_name),
-      asset_name,
-      Asset_Naming.identifier(asset_name),
-    };
-    foreach (string candidate in candidates.Where(name => !string.IsNullOrWhiteSpace(name)).Distinct())
-    {
-      Data_Tileset match = reader.find_by_graphic_name(tilesets, candidate);
-      if (match != null)
-        return match;
-    }
-    return null;
+    return reader.find_for_asset_name(tilesets, asset_name);
   }
 
   internal static Dictionary<int, Data_Tileset> read_metadata(string assets_root, Tileset_Metadata_Reader reader)

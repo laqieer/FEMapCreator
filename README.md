@@ -1,20 +1,65 @@
 # FE Map Creator
 
-A Fire Emblem focused map creation tool, originally published at:
+A Fire Emblem focused map creation and generation tool, originally published at:
 
 https://bwdyeti.com/programs/#MapGen
 
-The solution has two front ends over a shared `FE_Map_Creator.Core` generation engine:
+**Use the Web app:** https://laqieer.github.io/FEMapCreator/
 
-- **GUI** (`FE_Map_Creator\FE_Map_Creator.csproj`) - Windows-only WinForms application.
-- **CLI** (`FE_Map_Creator.Cli\FE_Map_Creator.Cli.csproj`) - cross-platform .NET 10 console tool (Windows, Linux, macOS) for scripted/headless generation, repair, and batch workflows.
+[Repository](https://github.com/laqieer/FEMapCreator) |
+[Issues](https://github.com/laqieer/FEMapCreator/issues) |
+[Discussions](https://github.com/laqieer/FEMapCreator/discussions) |
+[Wiki](https://github.com/laqieer/FEMapCreator/wiki) |
+[Latest release](https://github.com/laqieer/FEMapCreator/releases/latest)
+
+All front ends share the platform-neutral `FE_Map_Creator.Core` generation engine:
+
+- **Cross-platform GUI** (`FE_Map_Creator.Gui`) - one Avalonia UI for Windows, macOS, Linux, and WebAssembly. It includes bundled tilesets, tile painting/erasing, brush/rectangle/flood-fill tools, locks, terrain constraints, resize, undo/redo, `.map`/`.mar`/`.tmx` open/save, and generation/repair.
+- **CLI** (`FE_Map_Creator.Cli`) - Windows, Linux, and macOS console workflows for generation, repair, validation, and batches.
+- **Legacy GUI** (`FE_Map_Creator`) - the original Windows-only WinForms editor, retained for legacy tileset-processing and specialized import/edit workflows.
 
 ## Requirements
 
-- .NET 10 SDK for development (all projects), .NET 10 SDK or matching runtime to run the published CLI.
-- Windows only for the GUI: Windows to build/run/publish it, and the .NET 10 Desktop Runtime for the framework-dependent published application.
+- .NET 10 SDK for development.
+- The `wasm-tools` workload to build or publish the Web app:
 
-## GUI: build, run, test, publish
+  ```powershell
+  dotnet workload install wasm-tools
+  ```
+
+- Release downloads are self-contained and do not require a separately installed .NET runtime.
+
+## Cross-platform GUI
+
+Run the desktop GUI on Windows, macOS, or Linux:
+
+```powershell
+dotnet run --project .\FE_Map_Creator.Gui.Desktop\FE_Map_Creator.Gui.Desktop.csproj -c Release
+```
+
+Build the desktop and browser hosts:
+
+```powershell
+dotnet build .\FE_Map_Creator.Gui.Desktop\FE_Map_Creator.Gui.Desktop.csproj -c Release
+dotnet build .\FE_Map_Creator.Gui.Browser\FE_Map_Creator.Gui.Browser.csproj -c Release
+```
+
+Publish the static Web app and validate its required assets/navigation:
+
+```powershell
+dotnet publish .\FE_Map_Creator.Gui.Browser\FE_Map_Creator.Gui.Browser.csproj -c Release
+.\scripts\smoke-test-web.ps1 -PublishDirectory .\FE_Map_Creator.Gui.Browser\bin\Release\net10.0-browser\publish
+```
+
+The static site is under the publish directory's `wwwroot\`. Pushes to `main` deploy it to GitHub Pages. Version tags publish self-contained Windows x64, Linux x64, macOS x64, macOS arm64, and Web archives to GitHub Releases.
+
+Run the platform-neutral GUI tests:
+
+```powershell
+dotnet test .\FE_Map_Creator.Gui.Tests\FE_Map_Creator.Gui.Tests.csproj -c Release
+```
+
+## Legacy WinForms GUI: build, run, test, publish
 
 ```powershell
 dotnet build .\FE_Map_Creator\FE_Map_Creator.sln -c Release

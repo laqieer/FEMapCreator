@@ -25,6 +25,22 @@ public sealed class MapCodecTests
   }
 
   [TestMethod]
+  public void TextMapStreamRoundTripLeavesCallerStreamOpen()
+  {
+    Map_Document expected = text_sample_document();
+    Text_Map_Codec codec = new Text_Map_Codec();
+    using MemoryStream stream = new MemoryStream();
+
+    codec.write(stream, expected);
+    Assert.IsTrue(stream.CanWrite);
+    stream.Position = 0;
+    Map_Document actual = codec.read(stream);
+
+    assert_document(expected, actual);
+    Assert.IsTrue(stream.CanRead);
+  }
+
+  [TestMethod]
   public void TextMapReaderRejectsMalformedRow()
   {
     string directory = create_temp_directory();
@@ -95,6 +111,27 @@ public sealed class MapCodecTests
     {
       Directory.Delete(directory, true);
     }
+  }
+
+  [TestMethod]
+  public void MarMapStreamRoundTripLeavesCallerStreamOpen()
+  {
+    Map_Document expected = mar_sample_document();
+    Mar_Map_Codec codec = new Mar_Map_Codec();
+    using MemoryStream stream = new MemoryStream();
+
+    codec.write(stream, expected);
+    Assert.IsTrue(stream.CanWrite);
+    stream.Position = 0;
+    Map_Document actual = codec.read(stream, new Map_Read_Options()
+    {
+      Width = expected.Width,
+      Height = expected.Height,
+      Tileset = expected.Tileset
+    });
+
+    assert_document(expected, actual);
+    Assert.IsTrue(stream.CanRead);
   }
 
   [TestMethod]
@@ -192,6 +229,23 @@ public sealed class MapCodecTests
     {
       Directory.Delete(directory, true);
     }
+  }
+
+  [TestMethod]
+  public void TmxMapStreamRoundTripLeavesCallerStreamOpen()
+  {
+    Map_Document expected = text_sample_document();
+    expected.Tileset_Image_Source = "tiles.png";
+    Tmx_Map_Codec codec = new Tmx_Map_Codec();
+    using MemoryStream stream = new MemoryStream();
+
+    codec.write(stream, expected);
+    Assert.IsTrue(stream.CanWrite);
+    stream.Position = 0;
+    Map_Document actual = codec.read(stream);
+
+    assert_document(expected, actual);
+    Assert.IsTrue(stream.CanRead);
   }
 
   [TestMethod]

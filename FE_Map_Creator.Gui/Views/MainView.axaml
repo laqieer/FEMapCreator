@@ -1,0 +1,287 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:FE_Map_Creator.Gui.Controls"
+             mc:Ignorable="d"
+             d:DesignWidth="1280"
+             d:DesignHeight="800"
+             x:Class="FE_Map_Creator.Gui.Views.MainView">
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+    <Menu Grid.Row="0">
+      <MenuItem Header="_File">
+        <MenuItem Header="_New" Click="new_map_click" />
+        <MenuItem Header="_Open..." Click="open_map_click" />
+        <Separator />
+        <MenuItem Header="_Save" Click="save_map_click" />
+        <MenuItem Header="Save _As..." Click="save_map_as_click" />
+      </MenuItem>
+      <MenuItem Header="_Edit">
+        <MenuItem x:Name="UndoMenuItem" Header="_Undo" Click="undo_click" />
+        <MenuItem x:Name="RedoMenuItem" Header="_Redo" Click="redo_click" />
+        <Separator />
+        <MenuItem Header="_Resize to dimensions" Click="resize_map_click" />
+        <MenuItem Header="Clear _locks" Click="clear_locks_click" />
+        <MenuItem Header="Clear _terrain constraints" Click="clear_terrain_click" />
+      </MenuItem>
+      <MenuItem Header="_Map">
+        <MenuItem Header="_Generate" Click="generate_click" />
+        <MenuItem Header="_Repair" Click="repair_click" />
+        <MenuItem x:Name="CancelOperationMenuItem"
+                  Header="_Cancel operation"
+                  Click="cancel_operation_click" />
+      </MenuItem>
+      <MenuItem Header="_Help">
+        <MenuItem Header="GitHub _Repository" Click="repository_link_click" />
+        <MenuItem Header="_Issues" Click="issues_link_click" />
+        <MenuItem Header="_Discussions" Click="discussions_link_click" />
+        <MenuItem Header="_Wiki" Click="wiki_link_click" />
+        <MenuItem Header="_Latest release" Click="release_link_click" />
+      </MenuItem>
+    </Menu>
+
+    <ScrollViewer Grid.Row="1"
+                  HorizontalScrollBarVisibility="Auto"
+                  VerticalScrollBarVisibility="Disabled">
+      <StackPanel Orientation="Horizontal" Spacing="6" Margin="8">
+        <Button Content="New" Click="new_map_click" />
+        <Button Content="Open" Click="open_map_click" />
+        <Button Content="Save" Click="save_map_click" />
+        <Separator Width="1" Margin="4,0" />
+        <Button x:Name="UndoButton" Content="Undo" Click="undo_click" />
+        <Button x:Name="RedoButton" Content="Redo" Click="redo_click" />
+        <Separator Width="1" Margin="4,0" />
+        <Button Classes="primary" Content="Generate" Click="generate_click" />
+        <Button Content="Repair" Click="repair_click" />
+        <Button x:Name="CancelOperationButton"
+                Content="Cancel"
+                IsEnabled="False"
+                Click="cancel_operation_click" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <Border x:Name="ErrorBanner"
+            Grid.Row="2"
+            IsVisible="False"
+            Background="#8B2635"
+            Padding="10">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock x:Name="ErrorText"
+                   Foreground="White"
+                   TextWrapping="Wrap" />
+        <Button Grid.Column="1"
+                Content="Dismiss"
+                Margin="12,0,0,0"
+                Click="dismiss_error_click" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="3" ColumnDefinitions="280,*,290">
+      <Border Grid.Column="0"
+              BorderBrush="#505765"
+              BorderThickness="0,1,1,0"
+              Padding="10">
+        <Grid RowDefinitions="Auto,Auto,*,Auto">
+          <TextBlock Classes="section-title" Text="Tileset" />
+          <ComboBox x:Name="TilesetComboBox"
+                    Grid.Row="1"
+                    HorizontalAlignment="Stretch"
+                    SelectionChanged="tileset_selection_changed" />
+          <Border Grid.Row="2"
+                  Margin="0,10,0,0"
+                  BorderBrush="#505765"
+                  BorderThickness="1">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+              <controls:Tile_Palette x:Name="TilePalette" />
+            </ScrollViewer>
+          </Border>
+          <TextBlock x:Name="TileSelectionText"
+                     Grid.Row="3"
+                     Margin="0,8,0,0"
+                     Text="Tile 0" />
+        </Grid>
+      </Border>
+
+      <Border Grid.Column="1"
+              Background="#171A21"
+              BorderBrush="#505765"
+              BorderThickness="0,1,1,0">
+        <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto">
+          <controls:Map_Canvas x:Name="MapCanvas" />
+        </ScrollViewer>
+      </Border>
+
+      <Border Grid.Column="2"
+              BorderBrush="#505765"
+              BorderThickness="0,1,0,0"
+              Padding="10">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel x:Name="OperationControls" Spacing="6">
+            <TextBlock Classes="section-title" Text="Map" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+              <StackPanel>
+                <TextBlock Text="Width" />
+                <NumericUpDown x:Name="WidthUpDown"
+                               Minimum="1"
+                               Maximum="256"
+                               Value="20" />
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Height" />
+                <NumericUpDown x:Name="HeightUpDown"
+                               Minimum="1"
+                               Maximum="256"
+                               Value="20" />
+              </StackPanel>
+            </Grid>
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Content="New map" Click="new_map_click" />
+              <Button Grid.Column="1" Content="Resize" Click="resize_map_click" />
+            </Grid>
+
+            <TextBlock Classes="section-title" Text="Drawing" />
+            <TextBlock Text="Brush" />
+            <ComboBox x:Name="BrushComboBox" />
+            <TextBlock Text="Mode" />
+            <ComboBox x:Name="ModeComboBox"
+                      SelectionChanged="mode_selection_changed" />
+            <TextBlock Text="Terrain" />
+            <ComboBox x:Name="TerrainComboBox" IsEnabled="False" />
+            <TextBlock Text="Zoom" />
+            <ComboBox x:Name="ZoomComboBox"
+                      SelectionChanged="zoom_selection_changed" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Content="Clear locks" Click="clear_locks_click" />
+              <Button Grid.Column="1"
+                      Content="Clear terrain"
+                      Click="clear_terrain_click" />
+            </Grid>
+
+            <TextBlock Classes="section-title" Text="Generation" />
+            <TextBlock Text="Algorithm" />
+            <ComboBox x:Name="AlgorithmComboBox" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+              <StackPanel>
+                <TextBlock Text="Depth" />
+                <NumericUpDown x:Name="DepthUpDown"
+                               Minimum="1"
+                               Maximum="2"
+                               Value="1" />
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Repair radius" />
+                <NumericUpDown x:Name="RadiusUpDown"
+                               Minimum="0"
+                               Maximum="64"
+                               Value="1" />
+              </StackPanel>
+            </Grid>
+            <TextBlock Text="Seed (blank = random)" />
+            <TextBox x:Name="SeedTextBox" PlaceholderText="Random" />
+            <TextBlock Text="Search node limit" />
+            <NumericUpDown x:Name="SearchLimitUpDown"
+                           Minimum="1"
+                           Maximum="10000000"
+                           Value="10000"
+                           Increment="1000" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+              <StackPanel>
+                <TextBlock Text="Restarts" />
+                <NumericUpDown x:Name="RestartUpDown"
+                               Minimum="1"
+                               Maximum="128"
+                               Value="4" />
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Nogood limit" />
+                <NumericUpDown x:Name="NogoodUpDown"
+                               Minimum="0"
+                               Maximum="1000000"
+                               Value="4096"
+                               Increment="256" />
+              </StackPanel>
+            </Grid>
+            <CheckBox x:Name="ConflictLearningCheckBox"
+                      IsChecked="True"
+                      Content="Conflict learning" />
+            <CheckBox x:Name="BranchConsistencyCheckBox"
+                      Content="Branch arc consistency" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+              <StackPanel>
+                <TextBlock Text="Hybrid initial halo" />
+                <NumericUpDown x:Name="InitialHaloUpDown"
+                               Minimum="0"
+                               Maximum="32"
+                               Value="1" />
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Hybrid max halo" />
+                <NumericUpDown x:Name="MaxHaloUpDown"
+                               Minimum="0"
+                               Maximum="64"
+                               Value="3" />
+              </StackPanel>
+            </Grid>
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Classes="primary"
+                      Content="Generate"
+                      Click="generate_click" />
+              <Button Grid.Column="1"
+                      Content="Repair"
+                      Click="repair_click" />
+            </Grid>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+
+    <Border Grid.Row="4"
+            Background="#242833"
+            Padding="8,5">
+      <Grid ColumnDefinitions="*,Auto,180" ColumnSpacing="12">
+        <TextBlock x:Name="StatusText" Text="Ready" />
+        <TextBlock x:Name="CursorText"
+                   Grid.Column="1"
+                   Text="x: -, y: -" />
+        <ProgressBar x:Name="OperationProgress"
+                     Grid.Column="2"
+                     Minimum="0"
+                     Maximum="100"
+                     Value="0"
+                     IsVisible="False" />
+      </Grid>
+    </Border>
+
+    <Border x:Name="ConfirmationOverlay"
+            Grid.RowSpan="5"
+            IsVisible="False"
+            Background="#99000000">
+      <Border Width="430"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Background="#2D3340"
+              BorderBrush="#6B7485"
+              BorderThickness="1"
+              CornerRadius="8"
+              Padding="20">
+        <StackPanel Spacing="14">
+          <TextBlock FontSize="18"
+                     FontWeight="SemiBold"
+                     Text="Unsaved changes" />
+          <TextBlock x:Name="ConfirmationText"
+                     TextWrapping="Wrap" />
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+            <Button Content="Cancel"
+                    Click="confirmation_cancel_click" />
+            <Button Grid.Column="1"
+                    Classes="primary"
+                    Content="Discard changes"
+                    Click="confirmation_accept_click" />
+          </Grid>
+        </StackPanel>
+      </Border>
+    </Border>
+  </Grid>
+</UserControl>

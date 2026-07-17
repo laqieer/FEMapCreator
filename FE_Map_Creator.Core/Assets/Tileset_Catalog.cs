@@ -92,15 +92,15 @@ public sealed class Tileset_Catalog
     if (exact.Count > 0)
       return exact;
     exact = this.Assets.Where(asset =>
-      string.Equals(asset_identifier(asset.Name), filename, StringComparison.OrdinalIgnoreCase) ||
-      normalize(asset_identifier(asset.Name)) == normalized).ToList();
+      string.Equals(Tileset_Asset_Naming.identifier(asset.Name), filename, StringComparison.OrdinalIgnoreCase) ||
+      normalize(Tileset_Asset_Naming.identifier(asset.Name)) == normalized).ToList();
     if (exact.Count > 0)
       return exact;
     return this.Assets.Where(asset =>
-      string.Equals(asset_name_without_identifier(asset.Name), filename, StringComparison.OrdinalIgnoreCase) ||
-      normalize(asset_name_without_identifier(asset.Name)) == normalized ||
-      string.Equals(asset_description(asset.Name), filename, StringComparison.OrdinalIgnoreCase) ||
-      normalize(asset_description(asset.Name)) == normalized).ToList();
+      string.Equals(Tileset_Asset_Naming.name_without_identifier(asset.Name), filename, StringComparison.OrdinalIgnoreCase) ||
+      normalize(Tileset_Asset_Naming.name_without_identifier(asset.Name)) == normalized ||
+      string.Equals(Tileset_Asset_Naming.description(asset.Name), filename, StringComparison.OrdinalIgnoreCase) ||
+      normalize(Tileset_Asset_Naming.description(asset.Name)) == normalized).ToList();
   }
 
   private static List<Tileset_Asset> scan(string root)
@@ -161,25 +161,6 @@ public sealed class Tileset_Catalog
     return string.Equals(image_name, data_name, StringComparison.OrdinalIgnoreCase) ?
       image_name :
       $"{image_name} / {data_name}";
-  }
-
-  private static string asset_identifier(string name)
-  {
-    int separator = name.LastIndexOf(" - ", StringComparison.Ordinal);
-    return separator >= 0 ? name.Substring(separator + 3).Trim() : name;
-  }
-
-  private static string asset_name_without_identifier(string name)
-  {
-    int separator = name.LastIndexOf(" - ", StringComparison.Ordinal);
-    return separator >= 0 ? name.Substring(0, separator).Trim() : name;
-  }
-
-  private static string asset_description(string name)
-  {
-    string without_identifier = asset_name_without_identifier(name);
-    int separator = without_identifier.IndexOf(" - ", StringComparison.Ordinal);
-    return separator >= 0 ? without_identifier.Substring(separator + 3).Trim() : without_identifier;
   }
 
   private static string normalize(string value)

@@ -14,7 +14,18 @@ public sealed class Text_Map_Codec : IMap_Codec
   {
     if (string.IsNullOrWhiteSpace(filename))
       throw new ArgumentException("A map filename is required.", nameof (filename));
-    using (StreamReader reader = new StreamReader(filename))
+    using (FileStream stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
+      return this.read(stream, options);
+  }
+
+  public Map_Document read(Stream stream, Map_Read_Options options = null)
+  {
+    if (stream == null)
+      throw new ArgumentNullException(nameof (stream));
+    if (!stream.CanRead)
+      throw new ArgumentException("The map stream must be readable.", nameof (stream));
+    using (StreamReader reader = new StreamReader(
+      stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 1024, leaveOpen: true))
     {
       string tileset = reader.ReadLine();
       if (tileset == null)
@@ -64,6 +75,18 @@ public sealed class Text_Map_Codec : IMap_Codec
   {
     if (string.IsNullOrWhiteSpace(filename))
       throw new ArgumentException("A map filename is required.", nameof (filename));
+    string directory = Path.GetDirectoryName(Path.GetFullPath(filename));
+    Directory.CreateDirectory(directory);
+    using (FileStream stream = new FileStream(filename, FileMode.Create, FileAccess.Write, FileShare.None))
+      this.write(stream, document, options);
+  }
+
+  public void write(Stream stream, Map_Document document, Map_Write_Options options = null)
+  {
+    if (stream == null)
+      throw new ArgumentNullException(nameof (stream));
+    if (!stream.CanWrite)
+      throw new ArgumentException("The map stream must be writable.", nameof (stream));
     if (document == null)
       throw new ArgumentNullException(nameof (document));
     string tileset = options != null && !string.IsNullOrWhiteSpace(options.Tileset) ?
@@ -71,9 +94,8 @@ public sealed class Text_Map_Codec : IMap_Codec
       document.Tileset;
     if (string.IsNullOrWhiteSpace(tileset))
       throw new InvalidOperationException("Text maps require a tileset identifier.");
-    string directory = Path.GetDirectoryName(Path.GetFullPath(filename));
-    Directory.CreateDirectory(directory);
-    using (StreamWriter writer = new StreamWriter(filename, false, new UTF8Encoding(false)))
+    using (StreamWriter writer = new StreamWriter(
+      stream, new UTF8Encoding(false), bufferSize: 1024, leaveOpen: true))
     {
       writer.WriteLine(tileset);
       writer.WriteLine($"{document.Height.ToString(CultureInfo.InvariantCulture)} {document.Width.ToString(CultureInfo.InvariantCulture)}");
@@ -92,6 +114,7 @@ public sealed class Text_Map_Codec : IMap_Codec
         }
         writer.WriteLine(row.ToString());
       }
+      writer.Flush();
     }
   }
 }

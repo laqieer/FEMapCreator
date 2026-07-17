@@ -137,6 +137,40 @@ public sealed class TilesetCatalogTests
   }
 
   [TestMethod]
+  public void MetadataReaderParsesStreamAndResolvesBundledAssetName()
+  {
+    string filename = Path.Combine(repository_root(), "Tileset_Data.xml");
+    Tileset_Metadata_Reader reader = new Tileset_Metadata_Reader();
+    using FileStream stream = File.OpenRead(filename);
+
+    Dictionary<int, FEXNA_Library.Data_Tileset> tilesets = reader.read(stream);
+    FEXNA_Library.Data_Tileset fields =
+      reader.find_for_asset_name(tilesets, "FE6 - Fields - 01020304");
+
+    Assert.IsNotNull(fields);
+    Assert.AreEqual("Fields", fields.Graphic_Name);
+    Assert.IsTrue(stream.CanRead);
+  }
+
+  [TestMethod]
+  public void EveryBundledTilesetResolvesTerrainMetadata()
+  {
+    string root = repository_root();
+    Tileset_Catalog catalog = new Tileset_Catalog(root);
+    Tileset_Metadata_Reader reader = new Tileset_Metadata_Reader();
+    Dictionary<int, FEXNA_Library.Data_Tileset> metadata =
+      reader.read(Path.Combine(root, "Tileset_Data.xml"));
+
+    Assert.HasCount(41, catalog.tilesets);
+    foreach (Tileset_Asset asset in catalog.tilesets)
+    {
+      Assert.IsNotNull(
+        reader.find_for_asset_name(metadata, asset.Name),
+        $"Bundled tileset \"{asset.Name}\" has no terrain metadata.");
+    }
+  }
+
+  [TestMethod]
   public void MetadataReaderRejectsMismatchedItemKey()
   {
     string directory = create_temp_directory();
@@ -196,6 +230,20 @@ public sealed class TilesetCatalogTests
     {
       Directory.Delete(directory, true);
     }
+  }
+
+  [TestMethod]
+  public void TerrainMetadataReaderParsesRepositoryXmlStream()
+  {
+    string filename = Path.Combine(repository_root(), "Terrain_Data.xml");
+    Terrain_Metadata_Reader reader = new Terrain_Metadata_Reader();
+    using FileStream stream = File.OpenRead(filename);
+
+    Dictionary<int, FEXNA_Library.Data_Terrain> terrains = reader.read(stream);
+
+    Assert.AreEqual("Plains", terrains[1].Name);
+    Assert.IsNotEmpty(terrains[1].Move_Costs);
+    Assert.IsTrue(stream.CanRead);
   }
 
   private static string create_catalog(params string[] names)

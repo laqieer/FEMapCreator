@@ -19,7 +19,17 @@ public sealed class Tmx_Map_Codec : IMap_Codec
   {
     if (string.IsNullOrWhiteSpace(filename))
       throw new ArgumentException("A map filename is required.", nameof (filename));
-    XDocument xml = XDocument.Load(filename, LoadOptions.SetLineInfo);
+    using (FileStream stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
+      return this.read(stream, options);
+  }
+
+  public Map_Document read(Stream stream, Map_Read_Options options = null)
+  {
+    if (stream == null)
+      throw new ArgumentNullException(nameof (stream));
+    if (!stream.CanRead)
+      throw new ArgumentException("The map stream must be readable.", nameof (stream));
+    XDocument xml = XDocument.Load(stream, LoadOptions.SetLineInfo);
     XElement root = xml.Root;
     if (root == null || root.Name.LocalName != "map")
       throw new InvalidDataException("TMX input is missing its map root element.");
@@ -52,6 +62,18 @@ public sealed class Tmx_Map_Codec : IMap_Codec
   {
     if (string.IsNullOrWhiteSpace(filename))
       throw new ArgumentException("A map filename is required.", nameof (filename));
+    string directory = Path.GetDirectoryName(Path.GetFullPath(filename));
+    Directory.CreateDirectory(directory);
+    using (FileStream stream = new FileStream(filename, FileMode.Create, FileAccess.Write, FileShare.None))
+      this.write(stream, document, options);
+  }
+
+  public void write(Stream stream, Map_Document document, Map_Write_Options options = null)
+  {
+    if (stream == null)
+      throw new ArgumentNullException(nameof (stream));
+    if (!stream.CanWrite)
+      throw new ArgumentException("The map stream must be writable.", nameof (stream));
     if (document == null)
       throw new ArgumentNullException(nameof (document));
     int first_gid = options?.First_Gid ?? 1;
@@ -104,9 +126,7 @@ public sealed class Tmx_Map_Codec : IMap_Codec
               new XAttribute("name", "Main"),
               new XAttribute("value", ""))),
           data)));
-    string directory = Path.GetDirectoryName(Path.GetFullPath(filename));
-    Directory.CreateDirectory(directory);
-    xml.Save(filename);
+    xml.Save(stream);
   }
 
   private static void read_layer(

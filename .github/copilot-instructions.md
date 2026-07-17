@@ -2,19 +2,26 @@
 
 ## Build, run, test, and publish
 
-- This is a Windows-only C# WinForms application using SDK-style .NET 10 projects. `global.json` selects the .NET 10 SDK.
+- This repository contains a shared Avalonia GUI for Windows, macOS, Linux, and Web, a cross-platform CLI/Core, and the legacy Windows-only WinForms editor. All projects use SDK-style .NET 10 projects; `global.json` selects the .NET 10 SDK.
+- Install `wasm-tools` before building the complete solution or browser host:
+
+  ```powershell
+  dotnet workload install wasm-tools
+  ```
+
 - Build the complete solution:
 
   ```powershell
   dotnet build .\FE_Map_Creator\FE_Map_Creator.sln -c Release
   ```
 
-- Run the application:
+- Run the cross-platform desktop GUI:
 
   ```powershell
-  dotnet run --project .\FE_Map_Creator\FE_Map_Creator.csproj -c Release
+  dotnet run --project .\FE_Map_Creator.Gui.Desktop\FE_Map_Creator.Gui.Desktop.csproj -c Release
   ```
 
+- Run the legacy WinForms GUI with `dotnet run --project .\FE_Map_Creator\FE_Map_Creator.csproj -c Release`.
 - Run all tests:
 
   ```powershell
@@ -27,18 +34,20 @@
   dotnet test .\FE_Map_Creator.Tests\FE_Map_Creator.Tests.csproj -c Release --filter "FullyQualifiedName~TileDataTests.BinaryRoundTripPreservesPriorities"
   ```
 
-- Publish a framework-dependent build:
+- Publish the Web GUI:
 
   ```powershell
-  dotnet publish .\FE_Map_Creator\FE_Map_Creator.csproj -c Release
+  dotnet publish .\FE_Map_Creator.Gui.Browser\FE_Map_Creator.Gui.Browser.csproj -c Release
   ```
 
-  The publish directory is `FE_Map_Creator\bin\Release\net10.0-windows\publish\`. Tileset PNGs, generation `.dat` files, XML metadata, and `Terrain_Images.png` are copied there automatically.
+  Its static site is under `FE_Map_Creator.Gui.Browser\bin\Release\net10.0-browser\publish\wwwroot\`. Validate it with `.\scripts\smoke-test-web.ps1 -PublishDirectory <publish-directory>`.
 - There is no separate lint command or lint configuration.
 
 ## Architecture
 
-- `FE_Map_Creator\Program.cs` launches `FE_Map_Creator_Form`, which owns nearly all application state and workflows: map loading/saving, drawing tools, rendering, undo, image import, terrain tagging, tileset processing, map generation, and repair.
+- `FE_Map_Creator.Gui` contains the shared Avalonia UI. `Editor_Session` owns platform-neutral map/edit/history state, `Map_Canvas` and `Tile_Palette` render the editor, and `Bundled_Asset_Catalog` loads embedded PNG/DAT/XML assets. `FE_Map_Creator.Gui.Desktop` and `FE_Map_Creator.Gui.Browser` are thin platform hosts.
+- The browser and desktop GUI use stream overloads on the Core map codecs so Avalonia storage-provider streams work without filesystem paths.
+- `FE_Map_Creator\Program.cs` launches the legacy `FE_Map_Creator_Form`, which still owns specialized image import, tileset processing/editing, and legacy workflows.
 - The owned tool windows are `Tileset_Palette_Form` for tile/brush selection, `Terrain_Palette_Form` for terrain tags, and `Tile_Edit_Form` for editing adjacency weights. `Map_Resize_Form` and `Mar_Import_Form` handle focused dialogs.
 - Maps are represented by parallel `[x, y]` arrays: `Map_Tiles`, `Drawn_Tiles`, `Locked_Tiles`, and `Terrain_Types`. `Drawn_Tiles` distinguishes generated/open cells from explicitly placed tiles, including tile index `0`; `Locked_Tiles` preserves cells during regeneration.
 - Tileset generation has three layers:

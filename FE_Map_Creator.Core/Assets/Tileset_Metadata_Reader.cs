@@ -17,7 +17,17 @@ public sealed class Tileset_Metadata_Reader
   {
     if (string.IsNullOrWhiteSpace(filename))
       throw new ArgumentException("A tileset metadata filename is required.", nameof (filename));
-    XDocument xml = XDocument.Load(filename, LoadOptions.SetLineInfo);
+    using (FileStream stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
+      return this.read(stream);
+  }
+
+  public Dictionary<int, Data_Tileset> read(Stream stream)
+  {
+    if (stream == null)
+      throw new ArgumentNullException(nameof (stream));
+    if (!stream.CanRead)
+      throw new ArgumentException("The tileset metadata stream must be readable.", nameof (stream));
+    XDocument xml = XDocument.Load(stream, LoadOptions.SetLineInfo);
     XElement root = xml.Root;
     if (root == null)
       throw new InvalidDataException("Tileset metadata is missing its root element.");
@@ -66,6 +76,30 @@ public sealed class Tileset_Metadata_Reader
     if (matches.Count > 1)
       throw new InvalidDataException($"Tileset metadata contains duplicate graphic name \"{graphic_name}\".");
     return matches.Count == 1 ? matches[0] : null;
+  }
+
+  public Data_Tileset find_for_asset_name(
+    IReadOnlyDictionary<int, Data_Tileset> tilesets,
+    string asset_name)
+  {
+    if (string.IsNullOrWhiteSpace(asset_name))
+      return null;
+    string[] candidates =
+    {
+      Tileset_Asset_Naming.description(asset_name),
+      Tileset_Asset_Naming.name_without_identifier(asset_name),
+      asset_name,
+      Tileset_Asset_Naming.identifier(asset_name),
+    };
+    foreach (string candidate in candidates
+      .Where(name => !string.IsNullOrWhiteSpace(name))
+      .Distinct(StringComparer.OrdinalIgnoreCase))
+    {
+      Data_Tileset match = this.find_by_graphic_name(tilesets, candidate);
+      if (match != null)
+        return match;
+    }
+    return null;
   }
 
   private static int required_int(XElement parent, string name)
