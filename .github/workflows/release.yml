@@ -4,9 +4,19 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v* tag to package and publish
+        required: true
+        type: string
 
 permissions:
   contents: write
+  discussions: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
 
 jobs:
   desktop:
@@ -34,6 +44,8 @@ jobs:
             extension: tar.gz
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
@@ -43,13 +55,13 @@ jobs:
           ./scripts/package-desktop.ps1
           -Rid "${{ matrix.rid }}"
           -OutputDirectory "${{ runner.temp }}/desktop-${{ matrix.rid }}"
-          -ArchivePath "${{ runner.temp }}/${{ matrix.asset }}-${{ github.ref_name }}.${{ matrix.extension }}"
-          -BundleVersion "${{ github.ref_name }}"
+          -ArchivePath "${{ runner.temp }}/${{ matrix.asset }}-${{ env.RELEASE_TAG }}.${{ matrix.extension }}"
+          -BundleVersion "${{ env.RELEASE_TAG }}"
           -AdHocSignMacBundle
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
-          path: ${{ runner.temp }}/${{ matrix.asset }}-${{ github.ref_name }}.${{ matrix.extension }}
+          path: ${{ runner.temp }}/${{ matrix.asset }}-${{ env.RELEASE_TAG }}.${{ matrix.extension }}
           retention-days: 1
           if-no-files-found: error
 
@@ -58,6 +70,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
@@ -68,11 +82,11 @@ jobs:
         run: >
           ./scripts/package-web.ps1
           -OutputDirectory "${{ runner.temp }}/web"
-          -ArchivePath "${{ runner.temp }}/FE-Map-Creator-Web-${{ github.ref_name }}.zip"
+          -ArchivePath "${{ runner.temp }}/FE-Map-Creator-Web-${{ env.RELEASE_TAG }}.zip"
       - uses: actions/upload-artifact@v7
         with:
           name: FE-Map-Creator-Web
-          path: ${{ runner.temp }}/FE-Map-Creator-Web-${{ github.ref_name }}.zip
+          path: ${{ runner.temp }}/FE-Map-Creator-Web-${{ env.RELEASE_TAG }}.zip
           retention-days: 1
           if-no-files-found: error
 
@@ -84,6 +98,8 @@ jobs:
       - web
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/download-artifact@v8
         with:
           path: release-assets
@@ -92,17 +108,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes_file="${GITHUB_WORKSPACE}/docs/releases/${GITHUB_REF_NAME}.md"
+          notes_file="${GITHUB_WORKSPACE}/docs/releases/${RELEASE_TAG}.md"
           notes_args=(--generate-notes)
           if [[ -f "${notes_file}" ]]; then
             notes_args=(--notes-file "${notes_file}")
           fi
           cd "${GITHUB_WORKSPACE}/release-assets"
           sha256sum ./* > SHA256SUMS.txt
-          gh release create "${GITHUB_REF_NAME}" \
+          gh release create "${RELEASE_TAG}" \
             ./* \
             --repo "${GITHUB_REPOSITORY}" \
-            --title "FE Map Creator ${GITHUB_REF_NAME}" \
+            --title "FE Map Creator ${RELEASE_TAG}" \
             --verify-tag \
             --discussion-category "Announcements" \
             "${notes_args[@]}"
