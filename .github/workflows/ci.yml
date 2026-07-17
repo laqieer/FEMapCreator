@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-solution:
+    name: Windows solution
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Install WebAssembly tools
+        run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Test complete solution
+        run: dotnet test .\FE_Map_Creator\FE_Map_Creator.sln -c Release
+
+  desktop-cross-platform:
+    name: Desktop (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Build desktop GUI
+        run: dotnet build ./FE_Map_Creator.Gui.Desktop/FE_Map_Creator.Gui.Desktop.csproj -c Release
+      - name: Test shared GUI
+        run: dotnet test ./FE_Map_Creator.Gui.Tests/FE_Map_Creator.Gui.Tests.csproj -c Release
+
+  browser:
+    name: WebAssembly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Install WebAssembly tools
+        run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Publish browser GUI
+        run: dotnet publish ./FE_Map_Creator.Gui.Browser/FE_Map_Creator.Gui.Browser.csproj -c Release -o "${{ runner.temp }}/web"
+      - name: Validate static site
+        shell: pwsh
+        run: ./scripts/smoke-test-web.ps1 -PublishDirectory "${{ runner.temp }}/web"
