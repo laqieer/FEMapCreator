@@ -57,6 +57,23 @@ public sealed class Map_Codec_Registry
     return this.codec(format).read(stream, options);
   }
 
+  public async Task<Map_Document> read_async(
+    Stream stream,
+    Map_Format format,
+    Map_Read_Options options = null)
+  {
+    if (stream == null)
+      throw new ArgumentNullException(nameof (stream));
+    if (!stream.CanRead)
+      throw new ArgumentException("The map stream must be readable.", nameof (stream));
+    using (MemoryStream buffer = new MemoryStream())
+    {
+      await stream.CopyToAsync(buffer);
+      buffer.Position = 0;
+      return this.codec(format).read(buffer, options);
+    }
+  }
+
   public void write(
     string filename,
     Map_Document document,
