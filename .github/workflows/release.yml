@@ -83,6 +83,7 @@ jobs:
       - desktop
       - web
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: release-assets
@@ -91,10 +92,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cd release-assets
-          sha256sum * > SHA256SUMS.txt
+          notes_file="${GITHUB_WORKSPACE}/docs/releases/${GITHUB_REF_NAME}.md"
+          notes_args=(--generate-notes)
+          if [[ -f "${notes_file}" ]]; then
+            notes_args=(--notes-file "${notes_file}")
+          fi
+          cd "${GITHUB_WORKSPACE}/release-assets"
+          sha256sum ./* > SHA256SUMS.txt
           gh release create "${GITHUB_REF_NAME}" \
             ./* \
             --repo "${GITHUB_REPOSITORY}" \
             --title "FE Map Creator ${GITHUB_REF_NAME}" \
-            --generate-notes
+            --verify-tag \
+            --discussion-category "Announcements" \
+            "${notes_args[@]}"
