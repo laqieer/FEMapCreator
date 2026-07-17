@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and troubleshooting
+    url: https://github.com/laqieer/FEMapCreator/discussions/categories/q-a
+    about: Ask how to use FE Map Creator or get help diagnosing behavior that is not yet a reproducible defect.
+  - name: Ideas and feature requests
+    url: https://github.com/laqieer/FEMapCreator/discussions/categories/ideas
+    about: Propose and discuss enhancements before implementation.
+  - name: Show and tell
+    url: https://github.com/laqieer/FEMapCreator/discussions/categories/show-and-tell
+    about: Share maps, workflows, integrations, and successful outcomes.
+  - name: General feedback
+    url: https://github.com/laqieer/FEMapCreator/discussions/categories/general
+    about: Leave feedback or start a conversation that is not a reproducible defect.
+  - name: Documentation wiki
+    url: https://github.com/laqieer/FEMapCreator/wiki
+    about: Check usage documentation and project guidance before opening a report.

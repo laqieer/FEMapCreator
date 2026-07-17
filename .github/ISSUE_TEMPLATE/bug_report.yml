@@ -1,0 +1,182 @@
+name: Bug report
+description: Report a reproducible defect in a released or development build
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve FE Map Creator. Use this form for reproducible defects.
+        Questions, ideas, general feedback, and examples of successful work belong in [Discussions](https://github.com/laqieer/FEMapCreator/discussions).
+
+  - type: checkboxes
+    id: duplicate-search
+    attributes:
+      label: Duplicate search
+      options:
+        - label: I searched existing open and closed issues and did not find this defect.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version, release, or commit
+      description: Provide the release tag/version or full commit SHA. For CI artifacts, include the artifact name.
+      placeholder: "v2.0.0, commit 0123456..., or artifact FE-Map-Creator-..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: latest-release
+    attributes:
+      label: Reproduces on the latest release
+      description: Test the latest published release when the affected frontend supports your platform.
+      options:
+        - "Yes"
+        - "No"
+        - "Unable to test"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frontend
+    attributes:
+      label: Frontend
+      options:
+        - Web
+        - Shared desktop GUI
+        - CLI
+        - Legacy WinForms GUI
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: OS, device, and browser
+      description: Include OS/version and CPU architecture. For Web, also include device and browser/version.
+      placeholder: "Windows 11 24H2, x64; or iPadOS 19, Safari 19"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: map-format
+    attributes:
+      label: Map format
+      options:
+        - .map
+        - .mar
+        - .tmx
+        - New/unsaved map
+        - Not map-related
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: dimensions
+    attributes:
+      label: Map dimensions
+      description: Give width × height, or state that the issue is not map-related.
+      placeholder: "30 × 20"
+
+  - type: input
+    id: tileset
+    attributes:
+      label: Tileset
+      description: Give the exact bundled tileset name/identifier, or describe the custom tileset without attaching copyrighted source material.
+      placeholder: "FE6 - Fields - 01020304"
+
+  - type: dropdown
+    id: operation
+    attributes:
+      label: Operation
+      options:
+        - Open/import
+        - Edit/paint/resize
+        - Generate
+        - Repair
+        - Validate
+        - Save/export
+        - Tileset processing
+        - Startup/navigation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: settings
+    attributes:
+      label: Relevant settings and options
+      description: Include algorithm, seed, terrain constraints, CLI arguments, or changed defaults. Redact private paths and secrets.
+      placeholder: "Algorithm: experimental; seed: 12345; dimensions: 30 × 20; other non-default options: ..."
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: List the smallest exact sequence that reliably triggers the defect.
+      placeholder: |
+        1. Start ...
+        2. Open/create ...
+        3. Choose ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include exact error text when available.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Regression
+      description: Did this work in an earlier version?
+      options:
+        - "Yes"
+        - "No"
+        - "Unknown"
+    validations:
+      required: true
+
+  - type: textarea
+    id: regression-details
+    attributes:
+      label: Last known working version
+      description: If this is a regression, identify the last working release, commit, or CI artifact.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Paste concise logs or drag in screenshots after removing secrets, usernames, private paths, and unrelated data.
+
+  - type: textarea
+    id: safe-fixture
+    attributes:
+      label: Safe fixture details
+      description: |
+        Describe any minimal fixture you can legally share and how it was created. Prefer a tiny synthetic map/spec or bundled tileset reference.
+        Do not upload ROMs, executables, copyrighted asset archives, private maps, credentials, or other sensitive material.
+      placeholder: "Synthetic 3 × 3 .map created from bundled tileset ..., containing no third-party or sensitive data."
+
+  - type: checkboxes
+    id: sensitive-data
+    attributes:
+      label: Sensitive and copyrighted data confirmation
+      options:
+        - label: I confirm that this report and its attachments contain no ROMs, executables, copyrighted/sensitive archives, credentials, or other private data.
+          required: true
