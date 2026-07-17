@@ -329,7 +329,20 @@ public sealed class MapJobSpecTests
         {
           new int[] { 1, 0 },
           new int[] { -16, 2 }
-        }
+        },
+        Edits = new FE_Map_Creator.Editing.Map_Edit_Operation[]
+        {
+          new FE_Map_Creator.Editing.Map_Edit_Operation
+          {
+            Action = "set-tile",
+            Shape = "rectangle",
+            X = 0,
+            Y = 0,
+            EndX = 1,
+            EndY = 1,
+            Tile = 7
+          }
+        },
       };
 
       reader.write_job(filename, expected);
@@ -351,6 +364,43 @@ public sealed class MapJobSpecTests
       Assert.IsTrue(actual.Locked[0][1]);
       Assert.AreEqual(-16, actual.Terrain[1][0]);
       Assert.AreEqual(2, actual.Terrain[1][1]);
+      Assert.AreEqual("set-tile", actual.Edits[0].Action);
+      Assert.AreEqual("rectangle", actual.Edits[0].Shape);
+      Assert.AreEqual(7, actual.Edits[0].Tile);
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [TestMethod]
+  public void ReaderRejectsInvalidEditOperation()
+  {
+    string directory = create_temp_directory();
+    try
+    {
+      string filename = Path.Combine(directory, "job.json");
+      File.WriteAllText(filename,
+        """
+        {
+          "version": 1,
+          "edits": [
+            {
+              "action": "set-tile",
+              "x": 0,
+              "y": 0,
+              "tile": -1
+            }
+          ]
+        }
+        """);
+
+      InvalidOperationException exception =
+        Assert.Throws<InvalidOperationException>(() => new Map_Job_Spec_Reader().read_job(filename));
+
+      StringAssert.Contains(exception.Message, "Edits[0]");
+      StringAssert.Contains(exception.Message, "non-negative tile");
     }
     finally
     {

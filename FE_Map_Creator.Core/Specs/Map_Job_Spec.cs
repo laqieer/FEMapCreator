@@ -1,4 +1,5 @@
 using System;
+using FE_Map_Creator.Editing;
 
 #nullable disable
 namespace FE_Map_Creator;
@@ -57,6 +58,8 @@ public sealed class Map_Job_Spec
 
   public int[][] Terrain { get; set; }
 
+  public Map_Edit_Operation[] Edits { get; set; }
+
   public void validate()
   {
     validate_algorithm();
@@ -91,6 +94,15 @@ public sealed class Map_Job_Spec
           $"Height is {this.Height.Value} but the constraint matrices contain {dimensions.Value.Height} rows.");
       }
       this.validate_constraints(dimensions.Value.Width, dimensions.Value.Height);
+    }
+    if (this.Edits != null)
+    {
+      for (int index = 0; index < this.Edits.Length; ++index)
+      {
+        if (this.Edits[index] == null)
+          throw new InvalidOperationException($"Edits[{index}] is null.");
+        this.Edits[index].validate($"Edits[{index}]");
+      }
     }
   }
 
