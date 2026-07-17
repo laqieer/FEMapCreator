@@ -62,7 +62,7 @@ internal static class Repair_Input_Preflight
     validate_mar_metadata(input_path, spec.Width, spec.Height, spec.Tileset);
   }
 
-  private static void validate_mar_metadata(string input_path, int? width, int? height, string tileset)
+  internal static void validate_mar_metadata(string input_path, int? width, int? height, string tileset)
   {
     List<string> requirements = new List<string>();
     if (!width.HasValue || width.Value <= 0)
@@ -77,8 +77,8 @@ internal static class Repair_Input_Preflight
     throw new InvalidOperationException(
       $"MAR input \"{input_path}\" requires {join(requirements)}. " +
       "MAR files do not contain dimensions or a tileset identifier, so these values are never inferred. " +
-      "Supply --width, --height, and --tileset; the corresponding width, height, and tileset fields in --spec or a batch manifest job; " +
-      "or a .mapgen.json sidecar for directory repair.");
+      "Supply --width, --height, and --tileset; use the corresponding fields in --spec or a batch manifest job; " +
+      "or, for directory repair, provide a .mapgen.json sidecar.");
   }
 
   private static string join(IReadOnlyList<string> values)

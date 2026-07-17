@@ -12,11 +12,19 @@ public sealed class CliIntegrationTests
     Cli_Process_Result help = await run_cli_async("--help");
 
     assert_success(help);
-    StringAssert.Contains(help.Standard_Output, "FE Map Creator command-line tool for generating and repairing maps.");
+    StringAssert.Contains(
+      help.Standard_Output,
+      "FE Map Creator command-line tool for editing, inspecting, generating, repairing, and validating maps.");
+    StringAssert.Contains(help.Standard_Output, "map");
     StringAssert.Contains(help.Standard_Output, "generate");
     StringAssert.Contains(help.Standard_Output, "repair");
     StringAssert.Contains(help.Standard_Output, "validate");
     StringAssert.Contains(help.Standard_Output, "tilesets");
+
+    Cli_Process_Result map_help = await run_cli_async("map", "--help");
+    assert_success(map_help);
+    StringAssert.Contains(map_help.Standard_Output, "edit");
+    StringAssert.Contains(map_help.Standard_Output, "inspect");
 
     Cli_Process_Result generate_help = await run_cli_async("generate", "--help");
     assert_success(generate_help);
@@ -376,7 +384,13 @@ public sealed class CliIntegrationTests
     Assert.AreEqual(4, tmx_document.Width);
     Assert.AreEqual(1, tmx_document.Height);
     Assert.AreEqual("FE6 - Fields - 01020304", tmx_document.Tileset);
-    Assert.AreEqual("FE6 - Fields - 01020304.png", tmx_document.Tileset_Image_Source);
+    StringAssert.EndsWith(
+      tmx_document.Tileset_Image_Source,
+      "FE6 - Fields - 01020304.png");
+    string tmx_image_path = Path.GetFullPath(Path.Combine(
+      Path.GetDirectoryName(tmx)!,
+      tmx_document.Tileset_Image_Source.Replace('/', Path.DirectorySeparatorChar)));
+    Assert.IsTrue(File.Exists(tmx_image_path), $"TMX image source did not resolve: {tmx_image_path}");
     string tmx_xml = File.ReadAllText(tmx);
     StringAssert.Contains(tmx_xml, "orientation=\"orthogonal\"");
     StringAssert.Contains(tmx_xml, "<tile gid=");
