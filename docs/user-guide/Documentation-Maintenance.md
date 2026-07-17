@@ -25,3 +25,5 @@ For every user-facing release:
 - Release notes: [GitHub Releases](https://github.com/laqieer/FEMapCreator/releases)
 
 Documentation changes should cite or link these sources instead of copying implementation details that are likely to drift.
+
+The `Publish Wiki` GitHub Actions workflow mirrors this directory to the repository's GitHub Wiki. GitHub requires the Wiki's first page to be created once in the web UI before its backing git repository exists; after initialization, normal guide changes on `main` sync automatically and the workflow can also be dispatched manually.
