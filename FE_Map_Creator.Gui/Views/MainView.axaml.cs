@@ -20,6 +20,8 @@ namespace FE_Map_Creator.Gui.Views;
 public partial class MainView : UserControl
 {
   private const string REPOSITORY_URL = "https://github.com/laqieer/FEMapCreator";
+  private const string USER_GUIDE_URL =
+    "https://github.com/laqieer/FEMapCreator/blob/main/docs/user-guide/Home.md";
 
   private static readonly FilePickerFileType All_Map_Files = new FilePickerFileType("Supported maps")
   {
@@ -666,8 +668,8 @@ public partial class MainView : UserControl
   private async void discussions_link_click(object sender, RoutedEventArgs e) =>
     await this.launch_uri($"{REPOSITORY_URL}/discussions");
 
-  private async void wiki_link_click(object sender, RoutedEventArgs e) =>
-    await this.launch_uri($"{REPOSITORY_URL}/wiki");
+  private async void user_guide_link_click(object sender, RoutedEventArgs e) =>
+    await this.launch_uri(USER_GUIDE_URL);
 
   private async void release_link_click(object sender, RoutedEventArgs e) =>
     await this.launch_uri($"{REPOSITORY_URL}/releases/latest");
